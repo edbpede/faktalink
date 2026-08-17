@@ -21,6 +21,7 @@
   let { video, emneTitle, locale, labels, onclose }: Props = $props();
 
   let dialog = $state<HTMLDialogElement | null>(null);
+  let closeButton = $state<HTMLButtonElement | null>(null);
 
   /**
    * The native dialog gives us the focus trap, the inert background, the top
@@ -30,7 +31,30 @@
    */
   $effect(() => {
     if (dialog === null) return;
-    if (video !== null && !dialog.open) dialog.showModal();
+
+    if (video !== null && !dialog.open) {
+      dialog.showModal();
+
+      // The embed autoplays, and an autoplaying cross-origin iframe takes
+      // focus once it loads. Escape would then go to YouTube's player rather
+      // than to this dialog, and the reader could not close it from the
+      // keyboard at all.
+      //
+      // Focus is therefore claimed for the close button both immediately and
+      // again after the iframe has had a chance to load, because the frame
+      // steals it at a moment we do not control. Focusing an already-focused
+      // element is a no-op, so the repeat costs nothing.
+      closeButton?.focus();
+      const reclaim = [0, 120, 400, 1000].map((delay) =>
+        setTimeout(() => {
+          // Only reclaim from the iframe, never from a control the reader
+          // has deliberately tabbed to.
+          if (document.activeElement?.tagName === "IFRAME") closeButton?.focus();
+        }, delay),
+      );
+      return () => reclaim.forEach(clearTimeout);
+    }
+
     if (video === null && dialog.open) dialog.close();
   });
 
@@ -38,12 +62,17 @@
   const marksContent = $derived(locale !== "da");
 
   /**
-   * A click on the backdrop closes. The dialog element is the backdrop, so a
-   * click landing on the element itself — rather than on the panel inside it —
-   * is a backdrop click.
+   * A click outside the video closes the player.
+   *
+   * The panel fills the dialog so the layout can centre the player, which means
+   * a click never reaches the dialog element itself and testing for it would
+   * make this handler dead code. The test is instead whether the click landed
+   * on the panel's own padding rather than on anything inside it.
    */
-  function onBackdropClick(event: MouseEvent) {
-    if (event.target === dialog) onclose();
+  function onSurfaceClick(event: MouseEvent) {
+    const target = event.target as HTMLElement | null;
+    if (target === null) return;
+    if (target === dialog || target.classList.contains("player-panel")) onclose();
   }
 </script>
 
@@ -52,10 +81,16 @@
   class="player-dialog"
   aria-label={video?.title ?? labels.untitled}
   {onclose}
-  onclick={onBackdropClick}
 >
   {#if video}
-    <div class="player-panel">
+    <!--
+      The click target for "dismiss": the panel is the full-viewport surface
+      around the player. A keyboard user has Escape and the close button, so
+      this needs no key handler of its own.
+    -->
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="player-panel" onclick={onSurfaceClick}>
       <div class="player-frame">
         <iframe
           src={buildEmbedUrl(video.id, video.provider, video.startSeconds)}
@@ -93,7 +128,12 @@
             {labels.fallback}
           </a>
 
-          <button type="button" class="focus-ring player-close" onclick={onclose}>
+          <button
+            bind:this={closeButton}
+            type="button"
+            class="focus-ring player-close"
+            onclick={onclose}
+          >
             <span class="i-lucide-x" aria-hidden="true"></span>
             {labels.close}
           </button>

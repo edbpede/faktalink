@@ -166,13 +166,14 @@ async function fetchLive(slug: string): Promise<EmneResult | null> {
       if (!response.ok) continue;
 
       const html = await response.text();
-      // A proxy that returns an error page rather than the target is useless
-      // here; requiring a plausible faktalink document filters that out.
-      if (html.length < 1000) continue;
+      if (html.trim() === "") continue;
 
       const extracted = extractFromHtml(html);
-      // The page exists but the proxy may have served a soft 404; a page with
-      // neither a title nor a video is not evidence of anything.
+
+      // Judge the response on what it parsed into, not on its size. A proxy
+      // that served its own error page yields neither a title nor a video, and
+      // that is the signal to try the next provider. A short page that did
+      // parse is a real answer and is kept.
       if (extracted.title === null && extracted.videos.length === 0) continue;
 
       return {
