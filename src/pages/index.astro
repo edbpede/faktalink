@@ -1,16 +1,5 @@
 ---
 import HomePage from "../components/HomePage.astro";
-import { getEmner, totalVideos } from "../lib/collection";
-
-const emner = await getEmner();
-// A handful of the largest emner: real evidence of what the index holds,
-// rather than an arbitrary slice.
-const samples = [...emner].sort((a, b) => b.videoCount - a.videoCount).slice(0, 6);
 ---
 
-<HomePage
-  locale="da"
-  emneCount={emner.length}
-  videoCount={totalVideos(emner)}
-  samples={samples.map(({ slug, title, videoCount }) => ({ slug, title, videoCount }))}
-/>
+<HomePage locale="da" />

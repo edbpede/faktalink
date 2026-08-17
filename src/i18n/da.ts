@@ -5,7 +5,7 @@
  * exactly these keys. A missing translation is a type error at build time,
  * never a blank string in the interface.
  *
- * Content from faktalink (emne titles, video titles, descriptions) is Danish
+ * Content from faktalink (page titles, video titles, descriptions) is Danish
  * source data and is never translated; it renders as-is in both locales.
  */
 export const da = {
@@ -13,9 +13,6 @@ export const da = {
   siteTagline: "Se videoerne fra faktalink.dk",
 
   skipToContent: "Gå til indhold",
-  navHome: "Forside",
-  navBrowse: "Alle emner",
-  navPaste: "Indsæt sidekode",
 
   themeToggle: "Skift til mørk eller lys visning",
   themeLight: "Lys",
@@ -24,83 +21,56 @@ export const da = {
   languageDanish: "Dansk",
   languageEnglish: "Engelsk",
 
-  homeEyebrow: "Videoregister for faktalink.dk",
   homeHeading: "Find videoerne på en faktalink-side",
   homeIntro:
-    "faktalink.dk gemmer sine videoer bag en samtykkeboks, der ikke virker for alle. Indsæt en emne-adresse her, så får du videoerne som en liste, du kan afspille med det samme.",
-  homeInputLabel: "Adresse eller emnenavn fra faktalink.dk",
-  homeInputPlaceholder: "faktalink.dk/emner/1970-erne",
-  homeSubmit: "Vis videoer",
-  homeHelp: "Du kan indsætte hele adressen eller blot emnenavnet, fx 1970-erne.",
-  homeBrowseLink: "Se alle emner med video",
+    "faktalink.dk gemmer sine videoer bag en samtykkeboks, der ikke virker for alle. Indsæt adressen her, så får du videoerne — klar til at spille.",
 
-  statEmner: "emner med video",
-  statVideos: "videoer i alt",
-  statCrawled: "emner gennemgået",
+  inputLabel: "Adresse eller emnenavn fra faktalink.dk",
+  inputPlaceholder: "1970-erne",
+  inputHelp: "Indsæt hele adressen, eller skriv blot emnenavnet.",
+  submit: "Vis videoer",
+  searching: "Søger",
+  clear: "Ryd feltet",
+
+  resultHeading: "Videoer på siden",
+  videoOne: "video",
+  videoMany: "videoer",
+  sourceLink: "Åbn siden på faktalink.dk",
+  liveNotice:
+    "Siden er hentet direkte fra faktalink.dk, fordi den er nyere end vores seneste opdatering.",
 
   errorEmpty: "Skriv en adresse eller et emnenavn først.",
-  errorNotAUrl: "Det ligner hverken en adresse eller et emnenavn. Prøv fx 1970-erne.",
+  errorNotAUrl: "Det ligner hverken en adresse eller et emnenavn.",
+  errorNotAUrlHelp: "Prøv fx 1970-erne eller faktalink.dk/emner/1970-erne.",
   errorWrongHost: "Adressen peger ikke på faktalink.dk.",
-  errorNotAnEmne: "Adressen er fra faktalink.dk, men den peger ikke på en emneside.",
-  errorMissingSlug: "Adressen mangler selve emnet, fx /emner/1970-erne.",
-  errorUnknownSlug: "Emnet findes ikke i registeret.",
-  errorUnknownSlugHelp:
-    "Registeret er bygget ved seneste opdatering. Er siden nyere, kan du indsætte sidens kildekode i stedet.",
-
-  browseEyebrow: "Registeret",
-  browseHeading: "Alle emner med video",
-  browseIntro: "Hvert emne herunder har mindst én video. Søg efter titel eller emnenavn.",
-  browseSearchLabel: "Søg blandt emner",
-  browseSearchPlaceholder: "Søg, fx kolde krig",
-  browseCount: "emner",
-  browseNoMatches: "Ingen emner passer til søgningen.",
-  browseNoMatchesHelp: "Prøv et kortere søgeord, eller ryd søgefeltet.",
-  browseClear: "Ryd søgning",
-  browseVideoOne: "video",
-  browseVideoMany: "videoer",
-
-  emneEyebrow: "Emne",
-  emneSourceLink: "Åbn siden på faktalink.dk",
-  emneVideoCount: "videoer på denne side",
-  emneVideoCountOne: "video på denne side",
-  emneEmpty: "Der er ingen videoer på denne side.",
-  emneEmptyHelp: "Siden findes på faktalink.dk, men den indeholder ingen videoklip.",
-  emneBackToBrowse: "Tilbage til alle emner",
+  errorWrongHostHelp: "Kopiér adressen fra browserens adresselinje på faktalink.dk.",
+  errorNotAnEmne: "Adressen peger ikke på en emneside.",
+  errorNotAnEmneHelp: "Emnesider ser sådan ud: faktalink.dk/emner/1970-erne.",
+  errorMissingSlug: "Adressen mangler selve emnet.",
+  errorMissingSlugHelp: "Tilføj emnenavnet, fx /emner/1970-erne.",
+  errorNoVideos: "Der er ingen videoer på den side.",
+  errorNoVideosHelp: "Siden findes på faktalink.dk, men den indeholder ingen videoklip.",
+  errorNotFound: "Emnet blev ikke fundet.",
+  errorNotFoundHelp: "Tjek stavemåden, eller kopiér adressen direkte fra faktalink.dk.",
+  errorUnreachable: "Siden kunne ikke hentes lige nu.",
+  errorUnreachableHelp:
+    "Emnet er nyere end vores seneste opdatering, og det lykkedes ikke at hente det direkte. Prøv igen om lidt.",
 
   videoPlay: "Afspil",
   videoPlayLabel: "Afspil videoen",
-  videoFallback: "Åbn på YouTube",
-  videoFallbackHint: "Virker afspilleren ikke, kan du åbne videoen direkte.",
   videoPosterAlt: "Videobillede",
-  videoIdLabel: "Video-id",
   videoStartsAt: "Starter",
   videoUntitled: "Uden titel",
 
-  pasteEyebrow: "Nyere sider",
-  pasteHeading: "Indsæt sidens kildekode",
-  pasteIntro:
-    "Er emnet nyere end registeret, kan du hente videoerne direkte fra sidens kildekode. Intet sendes videre — alt sker i din browser.",
-  pasteSteps: "Sådan gør du",
-  pasteStep1: "Åbn emnesiden på faktalink.dk.",
-  pasteStep2: "Tryk Ctrl+U for at se kildekoden.",
-  pasteStep3: "Tryk Ctrl+A og derefter Ctrl+C.",
-  pasteStep4: "Indsæt koden i feltet herunder.",
-  pasteLabel: "Sidens kildekode",
-  pastePlaceholder: "Indsæt hele kildekoden her",
-  pasteSubmit: "Find videoer",
-  pasteClear: "Ryd feltet",
-  pasteResultHeading: "Fundne videoer",
-  pasteEmptyInput: "Indsæt kildekoden først.",
-  pasteNoVideos: "Der er ingen videoer i den indsatte kode.",
-  pasteNoVideosHelp: "Siden indeholder ingen videoklip, eller kun en del af koden blev indsat.",
-  pasteParseError: "Koden kunne ikke læses.",
-  pasteParseErrorHelp:
-    "Sørg for at kopiere hele kildekoden fra Ctrl+U — ikke teksten fra selve siden.",
+  playerClose: "Luk",
+  playerFallback: "Åbn på YouTube",
+  playerBlocked: "Afspilleren kunne ikke indlæses.",
+  playerBlockedHelp: "Dit netværk blokerer måske afspilleren. Åbn videoen direkte i stedet.",
 
-  footerSource: "Videoerne hører til faktalink.dk, som også krediteres på hver emneside.",
-  footerBuilt: "Registeret er bygget",
+  footerSource: "Videoerne hører til faktalink.dk, som krediteres på hver side.",
   notFoundHeading: "Siden findes ikke",
-  notFoundIntro: "Adressen fører ingen steder hen. Prøv registeret i stedet.",
+  notFoundIntro: "Adressen fører ingen steder hen. Prøv forsiden i stedet.",
+  notFoundLink: "Gå til forsiden",
 } as const;
 
 /**

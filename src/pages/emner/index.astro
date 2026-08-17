@@ -1,8 +1,0 @@
----
-import BrowsePage from "../../components/BrowsePage.astro";
-import { getEmner, toIndexEntries, totalVideos } from "../../lib/collection";
-
-const emner = await getEmner();
----
-
-<BrowsePage locale="da" entries={toIndexEntries(emner)} videoCount={totalVideos(emner)} />
