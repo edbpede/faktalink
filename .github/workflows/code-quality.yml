@@ -34,7 +34,9 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - uses: j178/prek-action@v3
+      # Pinned to the exact tag: upstream published v3.0.0 without pushing a
+      # floating `v3` major alias, so `@v3` does not resolve.
+      - uses: j178/prek-action@v3.0.0
         with:
           # The `ci` group is the union of the commit-time hooks and the slow
           # ones (type-check, tests, build) that are pre-push or manual locally.
