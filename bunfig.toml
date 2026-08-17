@@ -1,0 +1,13 @@
+[test]
+# Scope `bun test` to the unit suite. Without this, the bare command also picks
+# up e2e/*.spec.ts, which import @playwright/test and cannot run under bun:test
+# — so `bun test` fails on a healthy tree. The Playwright specs have their own
+# runner (`bun run test:e2e`).
+root = "src"
+
+[install]
+# Single-package project: hoisted is Bun's default here and what Astro/Vite expect.
+linker = "hoisted"
+# Pin what we resolve. A video index built from a live crawl is reproducible only
+# if the toolchain that built it is too.
+exact = true

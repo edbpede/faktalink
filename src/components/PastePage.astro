@@ -1,0 +1,78 @@
+---
+import PasteSource from "../components/PasteSource.svelte";
+import { type Locale, useTranslations } from "../i18n";
+import Layout from "../layouts/Layout.astro";
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+const t = useTranslations(locale);
+
+const steps = [t("pasteStep1"), t("pasteStep2"), t("pasteStep3"), t("pasteStep4")];
+---
+
+<Layout
+  locale={locale}
+  title={`${t("pasteHeading")} — ${t("siteName")}`}
+  description={t("pasteIntro")}
+>
+  <section class="max-w-2xl">
+    <p class="eyebrow m-0">{t("pasteEyebrow")}</p>
+    <h1 class="display mt-4 text-3xl sm:text-4xl">{t("pasteHeading")}</h1>
+    <p class="prose-da mt-5 text-muted-foreground">{t("pasteIntro")}</p>
+  </section>
+
+  <section class="mt-10 max-w-2xl">
+    <h2 class="eyebrow m-0">{t("pasteSteps")}</h2>
+    {
+      /*
+      Numbered because these steps are a real sequence — the keystrokes only work
+      in this order — not as decoration.
+    */
+    }
+    <ol class="m-0 mt-4 list-none space-y-0 p-0">
+      {
+        steps.map((step, index) => (
+          <li class="flex gap-4 border-t border-border py-3 last:border-b">
+            <span class="font-mono text-xs tabular-nums text-muted-foreground/70">
+              {String(index + 1).padStart(2, "0")}
+            </span>
+            <span class="text-sm text-foreground">{step}</span>
+          </li>
+        ))
+      }
+    </ol>
+  </section>
+
+  <section class="mt-10">
+    <PasteSource
+      client:visible
+      locale={locale}
+      labels={{
+        label: t("pasteLabel"),
+        placeholder: t("pastePlaceholder"),
+        submit: t("pasteSubmit"),
+        clear: t("pasteClear"),
+        resultHeading: t("pasteResultHeading"),
+        emptyInput: t("pasteEmptyInput"),
+        noVideos: t("pasteNoVideos"),
+        noVideosHelp: t("pasteNoVideosHelp"),
+        parseError: t("pasteParseError"),
+        parseErrorHelp: t("pasteParseErrorHelp"),
+        sourceLink: t("emneSourceLink"),
+      }}
+      videoLabels={{
+        play: t("videoPlay"),
+        playLabel: t("videoPlayLabel"),
+        fallback: t("videoFallback"),
+        fallbackHint: t("videoFallbackHint"),
+        posterAlt: t("videoPosterAlt"),
+        idLabel: t("videoIdLabel"),
+        startsAt: t("videoStartsAt"),
+        untitled: t("videoUntitled"),
+      }}
+    />
+  </section>
+</Layout>

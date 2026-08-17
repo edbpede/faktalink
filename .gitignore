@@ -111,3 +111,16 @@ dist
 
 # TernJS port file
 .tern-port
+
+# --- Faktalink Video Viewer ---
+# Astro build output and type cache
+dist/
+.astro/
+
+# Raw faktalink HTML fetched by scripts/crawl.ts. Hundreds of files we did not
+# author; the committed index (src/data/emner.json) is the build input, not these.
+.cache/
+
+# Playwright
+test-results/
+playwright-report/

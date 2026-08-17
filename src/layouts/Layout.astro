@@ -1,0 +1,171 @@
+---
+import ThemeToggle from "../components/ThemeToggle.svelte";
+import { HTML_LANG, type Locale, useTranslations } from "../i18n";
+import { alternatePath, browsePath, homePath, pastePath } from "../lib/paths";
+import "../styles/global.css";
+
+interface Props {
+  locale: Locale;
+  title: string;
+  description: string;
+}
+
+const { locale, title, description } = Astro.props;
+const t = useTranslations(locale);
+
+const currentPath = Astro.url.pathname;
+const siteUrl = Astro.site;
+
+const nav = [
+  { href: homePath(locale), label: t("navHome") },
+  { href: browsePath(locale), label: t("navBrowse") },
+  { href: pastePath(locale), label: t("navPaste") },
+];
+
+const isCurrent = (href: string) =>
+  currentPath === href || currentPath === `${href}/` || `${currentPath}/` === href;
+
+const alternates: { locale: Locale; hreflang: string; href: string }[] = [
+  { locale: "da", hreflang: "da", href: alternatePath(currentPath, "da") },
+  { locale: "en", hreflang: "en", href: alternatePath(currentPath, "en") },
+];
+
+const other: Locale = locale === "da" ? "en" : "da";
+const otherLabel = other === "da" ? t("languageDanish") : t("languageEnglish");
+---
+
+<!doctype html>
+<html lang={HTML_LANG[locale]}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta name="color-scheme" content="light dark" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%236b5344'/%3E%3Cpath d='M13 10l9 6-9 6z' fill='%23fff'/%3E%3C/svg%3E"
+    />
+
+    {
+      alternates.map((alternate) => (
+        <link
+          rel="alternate"
+          hreflang={alternate.hreflang}
+          href={siteUrl ? new URL(alternate.href, siteUrl).href : alternate.href}
+        />
+      ))
+    }
+    <link
+      rel="alternate"
+      hreflang="x-default"
+      href={siteUrl
+        ? new URL(alternatePath(currentPath, "da"), siteUrl).href
+        : alternatePath(currentPath, "da")}
+    />
+
+    {
+      /*
+      Pre-paint theme script. Runs before first paint so a dark-mode reload never
+      flashes white. `is:inline` keeps Astro from bundling it — bundled, it would
+      load too late to matter. The key and encoding match src/stores/theme.ts.
+    */
+    }
+    <script is:inline>
+      (() => {
+        try {
+          const stored = localStorage.getItem("faktalink-theme");
+          if (stored === "dark") {
+            document.documentElement.classList.add("dark");
+            document.documentElement.style.colorScheme = "dark";
+          }
+        } catch (_) {
+          /* Private mode or blocked storage: light is the default anyway. */
+        }
+      })();
+    </script>
+  </head>
+
+  <body class="bg-background text-foreground antialiased">
+    <a
+      class="skip-link focus-ring rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground"
+      href="#main"
+    >
+      {t("skipToContent")}
+    </a>
+
+    <div class="mx-auto flex min-h-screen w-full max-w-5xl flex-col px-5 sm:px-8">
+      <header class="flex flex-wrap items-center justify-between gap-4 py-6">
+        <a
+          href={homePath(locale)}
+          class="focus-ring group rounded no-underline"
+          aria-label={t("siteName")}
+        >
+          <span
+            class="block font-mono text-[0.6875rem] uppercase tracking-[0.2em] text-muted-foreground"
+          >
+            faktalink.dk
+          </span>
+          <span class="display block text-xl text-foreground">{t("siteName")}</span>
+        </a>
+
+        <div class="flex items-center gap-2">
+          <nav aria-label={t("navBrowse")} class="mr-1 hidden items-center gap-1 sm:flex">
+            {
+              nav.map((item) => (
+                <a
+                  href={item.href}
+                  aria-current={isCurrent(item.href) ? "page" : undefined}
+                  class="focus-ring rounded-md px-2.5 py-1.5 text-xs font-medium text-muted-foreground no-underline transition-colors hover:(bg-accent text-foreground) aria-[current=page]:(bg-accent text-foreground)"
+                >
+                  {item.label}
+                </a>
+              ))
+            }
+          </nav>
+
+          <a
+            href={alternatePath(currentPath, other)}
+            hreflang={other}
+            lang={other}
+            class="focus-ring rounded-md border border-border bg-card px-2.5 py-1.5 text-xs font-medium text-muted-foreground no-underline transition-colors hover:(bg-accent text-foreground)"
+            aria-label={`${t("languageLabel")}: ${otherLabel}`}
+          >
+            {other.toUpperCase()}
+          </a>
+
+          <ThemeToggle
+            client:idle
+            label={t("themeToggle")}
+            lightLabel={t("themeLight")}
+            darkLabel={t("themeDark")}
+          />
+        </div>
+      </header>
+
+      <hr class="rule" />
+
+      <main id="main" class="flex-1 py-10 sm:py-14">
+        <slot />
+      </main>
+
+      <footer class="border-t border-border py-8">
+        <nav aria-label={t("navBrowse")} class="mb-4 flex flex-wrap gap-x-5 gap-y-2 sm:hidden">
+          {
+            nav.map((item) => (
+              <a
+                href={item.href}
+                class="focus-ring rounded text-xs font-medium text-muted-foreground no-underline hover:text-foreground"
+              >
+                {item.label}
+              </a>
+            ))
+          }
+        </nav>
+        <p class="m-0 max-w-2xl text-xs leading-relaxed text-muted-foreground">
+          {t("footerSource")}
+        </p>
+      </footer>
+    </div>
+  </body>
+</html>
