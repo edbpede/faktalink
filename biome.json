@@ -12,6 +12,9 @@
       "!.astro",
       "!.cache",
       "!node_modules",
+      "!playwright-report",
+      "!test-results",
+      "!.gjc",
       "!bun.lock",
       "!src/styles/caffeine.css",
       "!src/styles/caffeine.theme.json"

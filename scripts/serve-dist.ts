@@ -8,11 +8,14 @@
  * A plain file server has no shared state, so the suite is deterministic locally
  * and in CI.
  *
- * Serves dist/ under the configured base path, mirroring how the site is
- * actually deployed, including the directory-index and 404 behaviour of a
- * typical static host.
+ * Serves dist/ the way the site is actually deployed, including the
+ * directory-index and 404 behaviour of a typical static host.
  *
- *   bun run scripts/serve-dist.ts [--port 4321] [--base /faktalink]
+ *   bun run scripts/serve-dist.ts [--port 4321] [--base ""]
+ *   PORT=4321 bun run scripts/serve-dist.ts
+ *
+ * Binds 0.0.0.0 so IPv4 probes from a CI step reach it regardless of how the
+ * runner resolves localhost.
  */
 
 import { join, normalize } from "node:path";
@@ -23,8 +26,11 @@ function flag(name: string, fallback: string): string {
   return value ?? fallback;
 }
 
-const port = Number.parseInt(flag("port", "4321"), 10);
-const base = flag("base", "/faktalink").replace(/\/$/, "");
+// PORT is read from the environment too, so a CI step can set it without
+// having to thread an argument through a shell quote.
+const port = Number.parseInt(flag("port", process.env["PORT"] ?? "4321"), 10);
+// The deployed site lives at the root of a custom domain, so no base by default.
+const base = flag("base", "").replace(/\/$/, "");
 const root = join(import.meta.dir, "..", "dist");
 
 /** Resolves a request path to a file inside dist/, refusing traversal. */
@@ -53,6 +59,7 @@ async function resolve(pathname: string): Promise<Response | null> {
 
 const server = Bun.serve({
   port,
+  hostname: "0.0.0.0",
   async fetch(request) {
     const { pathname } = new URL(request.url);
 

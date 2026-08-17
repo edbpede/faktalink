@@ -1,0 +1,132 @@
+# Tier-1 smoke test: build the site, serve it, and prove every real route loads.
+#
+# Deliberately NOT a browser test. It verifies that the app builds, boots and
+# serves real content, and it will NOT catch client-side breakage: these pages
+# are prerendered, so an emne page returns 200 with all 13 posters in the HTML
+# even when a svelte or astro bump has broken island hydration. That coverage is
+# the Playwright suite's job and runs in `tests.yml`; this workflow exists to
+# give a fast, independent "the site still serves" signal in under a minute.
+#
+# code-quality.yml and tests.yml also build this repo. Keeping smoke in its own
+# workflow costs one extra build per push; that is the accepted tradeoff for
+# having the smoke signal reported independently of the lint/format gate.
+name: Smoke Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Read-only throughout. Unlike code-quality.yml there is no write-capable job
+# here, and no biome-migrate job — that belongs solely to the quality gate.
+permissions:
+  contents: read
+
+concurrency:
+  group: smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: Build · serve · load
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          # Derived from the committed `packageManager` field, not `latest`.
+          bun-version-file: package.json
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build
+        run: bun run build
+
+      - name: Serve and smoke-test routes
+        run: |
+          set -euo pipefail
+
+          # `scripts/serve-dist.ts` rather than `astro preview`: preview manages
+          # a background daemon, which leaves "has the server started" ambiguous
+          # and can outlive the step. This serves the same `dist/` in the
+          # foreground on 0.0.0.0, so the IPv4 probes below always reach it.
+          PORT=4321 bun run scripts/serve-dist.ts &
+          server=$!
+          trap 'kill "${server}" 2>/dev/null || true' EXIT
+
+          # Readiness loop, deliberately NOT `curl --retry`: this distinguishes
+          # "not up yet" from "up but broken", so a real 500 fails fast instead
+          # of being retried into a timeout.
+          timeout 90 bash -c 'until curl -fsS -o /dev/null http://127.0.0.1:4321/; do sleep 1; done'
+
+          # Assert on CONTENT, not just status — a 200 error page would sail
+          # through a status-only check.
+          #
+          # The body goes to a file rather than into `curl ... | grep -q`:
+          # grep -q exits at the first match, curl then dies of SIGPIPE with
+          # exit 23, and `pipefail` turns that into a failure. Whether it trips
+          # depends on response size and timing, so the piped form is
+          # intermittently red rather than reliably broken.
+          #
+          # Every route the site publishes is listed: the Danish default locale
+          # and the /en prefix, which is where a routing or i18n regression
+          # shows up first, plus one real emne page per locale.
+          for path in / /emner /indsaet /emner/1970-erne /en/ /en/emner /en/indsaet /en/emner/1970-erne; do
+            echo "==> ${path}"
+            curl -fsS -m 10 -o "${RUNNER_TEMP}/page.html" "http://127.0.0.1:4321${path}"
+            grep -q '<title>' "${RUNNER_TEMP}/page.html" \
+              || { echo "SMOKE FAILED: ${path} served no <title>"; exit 1; }
+          done
+
+          # The reference emne page must carry all 13 posters. This is the one
+          # assertion that proves the committed index actually reached the
+          # rendered HTML: a broken content collection or loader still serves a
+          # 200 with a valid <title> and no videos at all.
+          echo "==> 13 posters on /emner/1970-erne"
+          curl -fsS -m 10 -o "${RUNNER_TEMP}/emne.html" "http://127.0.0.1:4321/emner/1970-erne"
+          posters=$(grep -o 'hqdefault\.jpg' "${RUNNER_TEMP}/emne.html" | wc -l | tr -d ' ')
+          [ "${posters}" = "13" ] \
+            || { echo "SMOKE FAILED: expected 13 posters, found ${posters}"; exit 1; }
+
+          # Attribution is a scope commitment, not a nicety: every emne page
+          # links back to its faktalink source. Cheap to assert, and it fails
+          # loudly if a refactor drops the link.
+          echo "==> attribution link back to faktalink.dk"
+          grep -q 'https://faktalink.dk/emner/1970-erne' "${RUNNER_TEMP}/emne.html" \
+            || { echo "SMOKE FAILED: emne page does not link back to faktalink"; exit 1; }
+
+          # The static JSON index is what the home-page resolver fetches to tell
+          # "not in the index" apart from "typo". It is not an HTML route, so it
+          # needs its own shape assertion rather than a <title> check.
+          echo "==> /emner-index.json"
+          curl -fsS -m 10 -o "${RUNNER_TEMP}/index.json" "http://127.0.0.1:4321/emner-index.json"
+          bun -e '
+            const entries = await Bun.file(process.env.RUNNER_TEMP + "/index.json").json();
+            if (!Array.isArray(entries) || entries.length === 0) {
+              throw new Error("index is not a non-empty array");
+            }
+            const bad = entries.find(
+              (e) => typeof e?.slug !== "string" || typeof e?.title !== "string" || typeof e?.videoCount !== "number",
+            );
+            if (bad) throw new Error("malformed entry: " + JSON.stringify(bad));
+            if (!entries.some((e) => e.slug === "1970-erne" && e.videoCount === 13)) {
+              throw new Error("1970-erne is missing or does not report 13 videos");
+            }
+            console.log("index OK:", entries.length, "emner");
+          '
+
+          # A static host serves the 404 page with a 404 status. `curl -f` would
+          # abort on that, so this probe checks the status code explicitly.
+          echo "==> 404 handling"
+          status=$(curl -sS -m 10 -o "${RUNNER_TEMP}/404.html" -w '%{http_code}' \
+            "http://127.0.0.1:4321/emner/der-findes-ikke")
+          [ "${status}" = "404" ] \
+            || { echo "SMOKE FAILED: unknown route returned ${status}, expected 404"; exit 1; }
+          grep -q '<title>' "${RUNNER_TEMP}/404.html" \
+            || { echo "SMOKE FAILED: 404 page served no <title>"; exit 1; }

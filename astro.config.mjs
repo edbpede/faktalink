@@ -9,8 +9,10 @@ import UnoCSS from "unocss/astro";
  */
 export default defineConfig({
   output: "static",
-  site: "https://edbpede.github.io",
-  base: "/faktalink",
+  // Custom domain, so the site serves from the root. No `base`: setting one
+  // would prefix every generated URL with a path segment that does not exist
+  // on faktalink.edbpede.net.
+  site: "https://faktalink.edbpede.net",
   trailingSlash: "ignore",
   integrations: [
     // injectReset pulls in the UnoCSS reset; presetWind4's own reset is not

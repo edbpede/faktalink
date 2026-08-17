@@ -7,8 +7,8 @@ import { defineConfig, devices } from "@playwright/test";
  * server: the build is what ships, and it is the only thing that exercises
  * Astro's Rust compiler and the hydration output together.
  *
- * `base` is "/faktalink" in astro.config.mjs, so the preview server serves the
- * site under that path and baseURL includes it.
+ * The deployed site lives at the root of a custom domain (no `base` in
+ * astro.config.mjs), so baseURL is the bare origin.
  */
 export default defineConfig({
   testDir: "./e2e",
@@ -17,7 +17,7 @@ export default defineConfig({
   retries: process.env["CI"] ? 2 : 0,
   reporter: process.env["CI"] ? "list" : [["list"]],
   use: {
-    baseURL: "http://localhost:4321/faktalink",
+    baseURL: "http://127.0.0.1:4321",
     trace: "on-first-retry",
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
@@ -26,8 +26,8 @@ export default defineConfig({
     // second invocation detects the first and exits immediately, which Playwright
     // reports as "Process from config.webServer exited early". scripts/serve-dist.ts
     // is a plain foreground file server with no shared state.
-    command: "bun run scripts/serve-dist.ts --port 4321 --base /faktalink",
-    url: "http://localhost:4321/faktalink/",
+    command: "bun run scripts/serve-dist.ts --port 4321",
+    url: "http://127.0.0.1:4321/",
     reuseExistingServer: !process.env["CI"],
     timeout: 120_000,
   },

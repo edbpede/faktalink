@@ -75,7 +75,13 @@ test.describe("paste-HTML fallback", () => {
     context,
   }) => {
     // Prove it is genuinely offline: block every external request first.
-    await context.route(/^https?:\/\/(?!localhost)/, (route) => route.abort());
+    // Block every host except the local server, whichever way it is addressed.
+    // Matching on "not localhost" alone silently aborts the site itself as soon
+    // as baseURL is written as 127.0.0.1.
+    await context.route(
+      (url) => url.hostname !== "localhost" && url.hostname !== "127.0.0.1",
+      (route) => route.abort(),
+    );
 
     // A committed fixture, not the gitignored crawler cache, so this passes in
     // CI. It carries the real __NEXT_DATA__ video payload — including the same

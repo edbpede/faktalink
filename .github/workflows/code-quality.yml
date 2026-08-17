@@ -1,8 +1,15 @@
-name: Code quality
-
-# The same hook set that runs locally. `prek run --all-files --group ci` is the
-# single entry point, so a green local commit and a green pipeline mean the same
-# thing rather than two different standards.
+# Code quality gate: Biome (format + lint), prek hooks, type check, build.
+#
+# The `biome-migrate` job exists so Renovate's grouped "biome" pull requests can
+# carry the config migration a new Biome release may require: it runs the
+# repo-local `biome migrate`, commits the result as the GitHub Actions bot, and
+# pushes back to the same Renovate branch. It is the ONLY job granted
+# `contents: write`, and its `if:` restricts it to Renovate branches in this
+# repository — ordinary and forked pull requests can never reach the write path.
+#
+# Tests live in `tests.yml` and route loading in `smoke.yml`; this file owns
+# formatting, hooks, types and the build only.
+name: Code Quality
 
 on:
   push:
@@ -10,64 +17,132 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Read-only by default; the migrate job opts into write for itself alone.
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: code-quality-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  biome-migrate:
+    name: Auto-migrate Biome config (Renovate only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Same-repository Renovate pull requests only. The fork comparison keeps a
+    # forked PR from ever being granted the write token below.
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.actor == 'renovate[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout pull request branch
+        uses: actions/checkout@v7
+        with:
+          # Check out the branch itself (not the detached merge commit) so the
+          # migration commit can be pushed back to the Renovate branch.
+          ref: ${{ github.head_ref }}
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          # Derived from the committed `packageManager` field, not `latest`.
+          bun-version-file: package.json
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # `bunx --bun biome` resolves the @biomejs/biome devDependency from
+      # node_modules, so the migration runs on the exact version Renovate just
+      # bumped to.
+      - name: Migrate Biome configuration
+        run: bunx --bun biome migrate --write
+
+      # Allowed to modify files. `continue-on-error` (not `|| true`) keeps a
+      # genuine failure visible in the UI while still letting the commit step
+      # capture whatever was fixed; the gate is the non-writing check below.
+      - name: Apply Biome formatting and safe fixes
+        continue-on-error: true
+        run: bunx --bun biome check --write .
+
+      - name: Commit and push migration result
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -u
+          if git diff --staged --quiet; then
+            echo "Biome configuration already current — nothing to commit."
+          else
+            git commit -m "chore: auto-migrate biome config"
+            git push
+          fi
+
+      # Authoritative, non-writing verification. Failures here fail the job.
+      - name: Verify Biome check passes
+        run: bunx --bun biome ci .
+
   quality:
-    name: Lint, type-check, test and build
+    name: Format · lint · hooks · types · build
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [biome-migrate]
+    # `always() && !failure() && !cancelled()` runs this job when biome-migrate
+    # is SKIPPED (the normal case), because a skipped dependency would otherwise
+    # cascade and skip the entire quality gate. A genuine migrate failure still
+    # stops this job.
+    if: ${{ always() && !failure() && !cancelled() }}
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v5
+      - name: Checkout repository
+        uses: actions/checkout@v7
         with:
-          # gitleaks scans history, so it needs more than the tip commit.
-          fetch-depth: 0
+          # On a Renovate PR this picks up the migration commit pushed above.
+          ref: ${{ github.head_ref || github.ref }}
 
-      - uses: oven-sh/setup-bun@v2
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.3.14
+          bun-version-file: package.json
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      # Pinned to the exact tag: upstream published v3.0.0 without pushing a
-      # floating `v3` major alias, so `@v3` does not resolve.
-      - uses: j178/prek-action@v3.0.0
+      # Biome owns TS/JS/JSON here; Prettier owns .astro/.svelte/.md and is run
+      # by the prek hook below, so both formatters are covered.
+      - name: Biome format and lint check
+        run: bunx --bun biome ci .
+
+      # The repository's own prek hooks, rather than a reimplementation of them.
+      # `--hook-stage manual` is what reaches the stack guards, the hygiene
+      # hooks and the config meta-checks in one pass. Verified in this repo:
+      # `--group ci` selects 7 hooks and silently drops every stack guard
+      # (Svelte 5 runes, presetWind4, the yout-ube.com embed host, Astro.glob),
+      # because those hooks carry no `groups` key.
+      #
+      # SKIP:
+      #   no-commit-to-branch — a local-commit guard, meaningless in CI where
+      #                         the checked-out ref legitimately is main.
+      #   build              — the manual-stage hook shells out to `bun run
+      #                         build`, which the dedicated step below already
+      #                         runs; skipping it halves the job's build time.
+      #
+      # Pinned to an exact tag: j178/prek-action publishes no floating v3 tag,
+      # so `@v3` is unresolvable.
+      - name: Run prek hooks
+        uses: j178/prek-action@v3.0.0
         with:
-          # The `ci` group is the union of the commit-time hooks and the slow
-          # ones (type-check, tests, build) that are pre-push or manual locally.
-          extra_args: --all-files --group ci
+          extra-args: --all-files --hook-stage manual
+        env:
+          SKIP: no-commit-to-branch,build
 
-  e2e:
-    name: End-to-end
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
+      # `bun run check` is `astro check`, the only thing that type-checks
+      # .astro files, and which also covers the Svelte islands.
+      - name: Astro and Svelte type check
+        run: bun run check
 
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.3.14
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Install Playwright browser
-        run: bunx --bun playwright install --with-deps chromium
-
-      # The suite runs against the real static build, so it must exist first.
-      - name: Build the site
+      - name: Build
         run: bun run build
-
-      - name: Run Playwright
-        run: bunx --bun playwright test
-
-      - uses: actions/upload-artifact@v4
-        if: ${{ !cancelled() }}
-        with:
-          name: playwright-report
-          path: playwright-report/
-          retention-days: 7

@@ -101,8 +101,9 @@ bun run dev             # dev server
 bun run build           # static build, no network needed
 bun run check           # type-check .astro and .svelte
 
-bun test src            # extractor unit tests
+bun test                # extractor unit tests (scoped to src/ by bunfig.toml)
 bun run test:e2e        # Playwright, against the real build
+bun run check:bundle    # assert the 50 KB JS budget on an emne page
 
 bun run crawl           # refresh the index (uses the on-disk cache)
 bun run crawl:refresh   # refresh, bypassing the cache
@@ -110,7 +111,40 @@ bun run tokens          # regenerate the caffeine token stylesheet
 
 prek install            # wire the git hooks
 prek run --all-files    # everything that runs on commit
+
+# What CI runs. `--hook-stage manual` is the selector that reaches the stack
+# guards; `--group ci` selects only the grouped subset and silently drops them.
+SKIP=no-commit-to-branch,build prek run --all-files --hook-stage manual
 ```
+
+## Continuous integration
+
+Four workflows, each owning one tier and nothing else:
+
+| Workflow           | Runs                                                                |
+| ------------------ | ------------------------------------------------------------------- |
+| `code-quality.yml` | Biome, the full prek hook set, `astro check`, build                 |
+| `tests.yml`        | Unit suite, the 50 KB bundle budget, Playwright                     |
+| `smoke.yml`        | Builds, serves `dist/`, asserts every route loads with real content |
+| `deploy.yml`       | Publishes `dist/` to the `gh-pages` branch on push to `main`        |
+
+Smoke is deliberately not a browser test. These pages are prerendered, so an emne page
+returns 200 with all 13 posters even when island hydration is broken; that coverage belongs
+to Playwright. Smoke exists to give a fast, independent "the site still serves" signal.
+
+## Deployment
+
+The site is published to GitHub Pages at **https://faktalink.edbpede.net** by
+`peaceiris/actions-gh-pages`, which force-pushes `dist/` to the `gh-pages` branch and
+rewrites the `CNAME` file on every run — which is why the custom domain survives a redeploy
+instead of being reset.
+
+Because it serves from the root of a custom domain, `astro.config.mjs` sets no `base`. A
+GitHub Pages _project_ subpath would need `base: "/faktalink"` restored and the Playwright
+and smoke URLs adjusted to match.
+
+The build needs no network access: the emne index is committed, so a deploy publishes exactly
+what a local `bun run build` produces.
 
 ## Stack
 
