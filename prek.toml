@@ -276,8 +276,8 @@ pass_filenames = false
 stages = ["pre-push"]
 groups = ["ci", "slow"]
 
-# The extractor is the one piece of logic both the build-time crawler and the
-# browser paste-fallback depend on, so its tests gate every push.
+# The extractor is the one piece of logic both the scheduled crawler and the
+# browser's live fallback depend on, so its tests gate every push.
 [[repos.hooks]]
 id = "tests"
 name = "Run test suite"
