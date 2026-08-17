@@ -1,0 +1,56 @@
+---
+import { useTranslations } from "../i18n";
+import { browsePath, homePath, pastePath } from "../lib/paths";
+import Layout from "../layouts/Layout.astro";
+
+// A static host serves one 404 for every unmatched path, including English
+// ones, so this page carries both languages rather than guessing.
+const da = useTranslations("da");
+const en = useTranslations("en");
+---
+
+<Layout
+  locale="da"
+  title={`${da("notFoundHeading")} — ${da("siteName")}`}
+  description={da("notFoundIntro")}
+>
+  <section class="max-w-xl">
+    <p class="eyebrow m-0">404</p>
+    <h1 class="display mt-4 text-3xl sm:text-4xl">{da("notFoundHeading")}</h1>
+    <p class="prose-da mt-5 text-muted-foreground">{da("notFoundIntro")}</p>
+
+    <div class="mt-8 flex flex-wrap gap-3">
+      <a
+        href={browsePath("da")}
+        class="focus-ring inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground no-underline transition-colors hover:bg-primary/90"
+      >
+        {da("navBrowse")}
+      </a>
+      <a
+        href={homePath("da")}
+        class="focus-ring inline-flex items-center gap-2 rounded-md border border-border px-4 py-2.5 text-sm font-medium no-underline transition-colors hover:bg-accent"
+      >
+        {da("navHome")}
+      </a>
+      <a
+        href={pastePath("da")}
+        class="focus-ring inline-flex items-center gap-2 rounded-md border border-border px-4 py-2.5 text-sm font-medium no-underline transition-colors hover:bg-accent"
+      >
+        {da("navPaste")}
+      </a>
+    </div>
+
+    <hr class="rule mt-10" />
+
+    <p class="mt-6 text-sm text-muted-foreground" lang="en">
+      <span class="font-medium text-foreground">{en("notFoundHeading")}.</span>
+      {en("notFoundIntro")}
+      <a
+        href={browsePath("en")}
+        class="focus-ring rounded underline underline-offset-4 hover:text-foreground"
+      >
+        {en("navBrowse")}
+      </a>
+    </p>
+  </section>
+</Layout>

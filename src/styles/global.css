@@ -1,0 +1,132 @@
+/**
+ * Global styles: fonts, type scale and the few base rules that are not utilities.
+ *
+ * Design direction — a catalogue, not a video site. faktalink's videos are
+ * archival Danish clips (state broadcasts, newsreels, documentary excerpts)
+ * attached to reference pages, so the site is built to read like an index card
+ * drawer: neutral paper, warm ink, hairline rules, and real metadata set in
+ * monospace. The caffeine palette supplies the ink; the type carries the voice.
+ *
+ * Only the `wght` axis of each variable font is loaded — no italic, no width —
+ * which keeps the whole three-family set to a handful of small woff2 files.
+ * Self-hosted rather than CDN-loaded on purpose: the users this site exists for
+ * are behind DNS filters that null-route third-party hosts.
+ */
+
+@import "@fontsource-variable/archivo/wght.css";
+@import "@fontsource-variable/newsreader/opsz.css";
+@import "@fontsource/ibm-plex-mono/400.css";
+@import "@fontsource/ibm-plex-mono/500.css";
+@import "./caffeine.css";
+
+:root {
+  /* Archivo: a grotesque with enough width variation to hold a tight headline.
+     Newsreader: a low-contrast screen serif for Danish descriptive prose.
+     Plex Mono: utility face for IDs, counts and slugs — real data, set as data. */
+  --font-sans: "Archivo Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-serif: "Newsreader Variable", ui-serif, Georgia, Cambria, "Times New Roman",
+    Times, serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
+
+  /* The one measure used for reading text. */
+  --measure: 68ch;
+}
+
+html {
+  font-family: var(--font-sans);
+  background-color: var(--background);
+  color: var(--foreground);
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-synthesis-weight: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* The display face is set tight and heavy; the optical correction only reads
+   correctly above roughly 2rem, so it is scoped rather than global. */
+.display {
+  font-family: var(--font-sans);
+  font-weight: 620;
+  letter-spacing: -0.03em;
+  line-height: 0.98;
+  text-wrap: balance;
+}
+
+.prose-da {
+  font-family: var(--font-serif);
+  font-size: 1.0625rem;
+  line-height: 1.6;
+  max-width: var(--measure);
+  text-wrap: pretty;
+}
+
+/* Hairline rules carry the catalogue metaphor. Kept at a real 1px rather than a
+   border utility so they stay crisp against both themes. */
+.rule {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 0;
+}
+
+/* The skip link is visually hidden until focused, then lands top-left. */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 100;
+}
+
+.skip-link:focus {
+  left: 0.75rem;
+  top: 0.75rem;
+}
+
+/* Cards reveal in sequence on load. Six steps is enough to read as a sequence
+   without the last card in a 13-video list waiting on a long delay. */
+@media (prefers-reduced-motion: no-preference) {
+  .reveal {
+    animation: reveal 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .reveal:nth-child(1) { animation-delay: 0ms; }
+  .reveal:nth-child(2) { animation-delay: 45ms; }
+  .reveal:nth-child(3) { animation-delay: 90ms; }
+  .reveal:nth-child(4) { animation-delay: 135ms; }
+  .reveal:nth-child(5) { animation-delay: 180ms; }
+  .reveal:nth-child(n + 6) { animation-delay: 225ms; }
+}
+
+@keyframes reveal {
+  from {
+    opacity: 0;
+    transform: translateY(0.5rem);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Honour the user's motion preference everywhere, including UnoCSS transitions. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+::selection {
+  background-color: var(--secondary);
+  color: var(--secondary-foreground);
+}
