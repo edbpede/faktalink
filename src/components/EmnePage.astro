@@ -34,9 +34,14 @@ const countLabel = videos.length === 1 ? t("emneVideoCountOne") : t("emneVideoCo
       </h1>
 
       <div class="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2">
+        {
+          /*
+          Astro 7 collapses JSX-style whitespace between expressions, so the
+          separating space is written explicitly rather than left to the newline.
+        */
+        }
         <span class="font-mono text-xs tabular-nums text-muted-foreground">
-          {videos.length}
-          {countLabel}
+          {`${videos.length} ${countLabel}`}
         </span>
         {/* Attribution: every emne page links back to its faktalink source. */}
         <a
@@ -71,6 +76,7 @@ const countLabel = videos.length === 1 ? t("emneVideoCountOne") : t("emneVideoCo
             playLabel: t("videoPlayLabel"),
             fallback: t("videoFallback"),
             fallbackHint: t("videoFallbackHint"),
+            posterAlt: t("videoPosterAlt"),
             idLabel: t("videoIdLabel"),
             startsAt: t("videoStartsAt"),
             untitled: t("videoUntitled"),

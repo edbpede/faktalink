@@ -25,10 +25,11 @@ const t = useTranslations(locale);
     <p class="eyebrow m-0">{t("browseEyebrow")}</p>
     <h1 class="display mt-4 text-3xl sm:text-4xl">{t("browseHeading")}</h1>
     <p class="prose-da mt-5 text-muted-foreground">{t("browseIntro")}</p>
+    {/* Explicit spacing: Astro 7 collapses whitespace between expressions. */}
     <p class="mt-4 font-mono text-xs text-muted-foreground">
-      {formatCount(entries.length, locale)}
-      {t("statEmner")} · {formatCount(videoCount, locale)}
-      {t("statVideos")}
+      {
+        `${formatCount(entries.length, locale)} ${t("statEmner")} · ${formatCount(videoCount, locale)} ${t("statVideos")}`
+      }
     </p>
   </section>
 

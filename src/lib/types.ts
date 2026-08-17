@@ -27,6 +27,7 @@ export interface VideoLabels {
   playLabel: string;
   fallback: string;
   fallbackHint: string;
+  posterAlt: string;
   idLabel: string;
   startsAt: string;
   untitled: string;

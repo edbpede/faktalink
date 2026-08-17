@@ -53,9 +53,14 @@
               onclick={() => (playingId = video.id)}
               aria-label={`${labels.playLabel}: ${title}`}
             >
+              <!--
+                A real alt, per the brief. The button's aria-label wins the
+                accessible-name computation, so this is not announced twice; it
+                earns its keep when the thumbnail CDN is blocked or slow.
+              -->
               <img
                 src={buildPosterUrl(video.id)}
-                alt=""
+                alt={`${labels.posterAlt}: ${title}`}
                 width="480"
                 height="360"
                 loading="lazy"

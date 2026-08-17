@@ -77,8 +77,11 @@ test.describe("paste-HTML fallback", () => {
     // Prove it is genuinely offline: block every external request first.
     await context.route(/^https?:\/\/(?!localhost)/, (route) => route.abort());
 
-    // Read with node:fs rather than Bun.file so the spec runs under either runtime.
-    const source = readFileSync(".cache/faktalink/1970-erne.html", "utf8");
+    // A committed fixture, not the gitignored crawler cache, so this passes in
+    // CI. It carries the real __NEXT_DATA__ video payload — including the same
+    // cross-section duplication the extractor must collapse — and none of
+    // faktalink's article prose.
+    const source = readFileSync("e2e/fixtures/1970-erne.html", "utf8");
 
     await page.goto("/indsaet");
     await page.getByLabel(/sidens kildekode/i).fill(source);

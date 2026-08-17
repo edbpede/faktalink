@@ -71,6 +71,7 @@ export const da = {
   videoPlayLabel: "Afspil videoen",
   videoFallback: "Åbn på YouTube",
   videoFallbackHint: "Virker afspilleren ikke, kan du åbne videoen direkte.",
+  videoPosterAlt: "Videobillede",
   videoIdLabel: "Video-id",
   videoStartsAt: "Starter",
   videoUntitled: "Uden titel",

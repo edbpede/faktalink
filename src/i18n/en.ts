@@ -69,6 +69,7 @@ export const en: Messages = {
   videoPlayLabel: "Play the video",
   videoFallback: "Open on YouTube",
   videoFallbackHint: "If the player does not work, open the video directly.",
+  videoPosterAlt: "Video thumbnail",
   videoIdLabel: "Video ID",
   videoStartsAt: "Starts at",
   videoUntitled: "Untitled",
