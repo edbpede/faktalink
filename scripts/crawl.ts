@@ -1,32 +1,31 @@
 /**
- * Build-time crawler: turns faktalink.dk's sitemap into the static video index.
+ * Refreshes the video snapshot from faktalink.dk.
  *
- * Astro frontmatter runs in Bun on our machine, where CORS does not exist —
- * which is the whole reason this runs at build time instead of in the browser.
- * faktalink.dk sends no `Access-Control-Allow-Origin` header, so a browser on
- * our domain cannot fetch it, and shipping a third-party CORS proxy would add
- * an uncontrolled dependency and leak user browsing to a stranger.
+ * Runs on a schedule in CI (`.github/workflows/crawl.yml`) and commits the
+ * result, so the site always has a fast, private, dependency-free answer for
+ * every page faktalink publishes. Pages newer than the last crawl are still
+ * resolved live in the browser; this snapshot is what makes the common case
+ * instant and reliable rather than hostage to a third-party CORS proxy.
  *
  *   bun run crawl              # uses the on-disk cache where available
  *   bun run crawl:refresh      # ignores the cache and refetches everything
  *
- * Output: src/data/emner.json — the committed index the site builds from.
- * Builds therefore need no network at all.
+ * Output: src/data/emner.json — committed, so a build needs no network at all.
  *
  * Scope: /emner/ pages only. We record video metadata and the page title; we do
- * not mirror faktalink's article text, and every emne page links back to source.
+ * not mirror faktalink's article text, and every result links back to source.
  */
 
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { extractFromHtml, NextDataError } from "../src/lib/extract";
+import { extractFromHtml, type VideoProvider } from "../src/lib/extract";
 import { FAKTALINK_ORIGIN } from "../src/lib/urls";
 
 /** Identifies us honestly, with a contact route, as a courtesy to the operator. */
 const USER_AGENT =
-  "faktalink-video-viewer/1.0 (+https://github.com/edbpede/faktalink; build-time indexer)";
+  "faktalink-video-viewer/2.0 (+https://github.com/edbpede/faktalink; scheduled indexer)";
 
-/** Politeness: a small parallel window, well inside the brief's 4-8 range. */
+/** Politeness: a small parallel window against a public service. */
 const CONCURRENCY = 6;
 
 /** Pause between a worker finishing one page and starting the next. */
@@ -36,13 +35,14 @@ const CACHE_DIR = join(import.meta.dir, "..", ".cache", "faktalink");
 const OUTPUT_FILE = join(import.meta.dir, "..", "src", "data", "emner.json");
 const SITEMAP_URL = `${FAKTALINK_ORIGIN}/sitemap.xml`;
 
-/** One indexed emne, as written to the committed JSON index. */
+/** One page's videos, as written to the committed snapshot. */
 interface EmneRecord {
   slug: string;
   title: string;
   videoCount: number;
   videos: {
     id: string;
+    provider: VideoProvider;
     title: string | null;
     description: string | null;
     startSeconds: number | null;
@@ -162,16 +162,18 @@ async function main(): Promise<void> {
         slug,
         title: title ?? slug,
         videoCount: videos.length,
-        videos: videos.map((video) => ({
-          id: video.id,
-          title: video.title,
-          description: video.description,
-          startSeconds: video.startSeconds,
+        videos: videos.map((v) => ({
+          id: v.id,
+          provider: v.provider,
+          title: v.title,
+          description: v.description,
+          startSeconds: v.startSeconds,
         })),
       } satisfies EmneRecord;
     } catch (cause) {
-      const message = cause instanceof NextDataError ? cause.message : String(cause);
-      failures.push({ slug, error: message });
+      // The extractor no longer throws on an unfamiliar page shape, so anything
+      // reaching here is a genuine network or filesystem failure.
+      failures.push({ slug, error: String(cause) });
       return null;
     } finally {
       done++;
@@ -181,20 +183,23 @@ async function main(): Promise<void> {
     }
   });
 
-  // Only emner that actually carry video are worth a page; the rest would be a
-  // route that renders an empty state nobody asked for. The counts still get
-  // reported so a drop in coverage is visible between crawls.
+  // Only pages that actually carry video are worth storing. The rest resolve
+  // live and report "no videos on this page", which is the truthful answer.
   const indexed = records
     .filter((record): record is EmneRecord => record !== null)
     .filter((record) => record.videoCount > 0)
-    .sort((a, b) => a.title.localeCompare(b.title, "da"));
+    .sort((a, b) => a.slug.localeCompare(b.slug, "da"));
 
   const totalVideos = indexed.reduce((sum, record) => sum + record.videoCount, 0);
+  const vimeoCount = indexed.reduce(
+    (sum, record) => sum + record.videos.filter((v) => v.provider === "vimeo").length,
+    0,
+  );
 
   await writeFile(OUTPUT_FILE, `${JSON.stringify(indexed, null, 2)}\n`, "utf8");
 
   console.log(
-    `\nIndexed ${indexed.length} emner with video (of ${slugs.length} crawled), ${totalVideos} videos total.`,
+    `\nSnapshot: ${indexed.length} pages with video (of ${slugs.length} crawled), ${totalVideos} videos (${vimeoCount} Vimeo).`,
   );
   console.log(`Wrote ${OUTPUT_FILE}`);
 
@@ -204,6 +209,13 @@ async function main(): Promise<void> {
       console.warn(`  ${failure.slug}: ${failure.error}`);
     }
     if (failures.length > 10) console.warn(`  ...and ${failures.length - 10} more`);
+
+    // A handful of transient failures is normal; losing a large fraction of the
+    // site is a signal something changed, and CI should not commit that quietly.
+    if (failures.length > slugs.length * 0.2) {
+      console.error(`\nMore than 20% of pages failed. Refusing to write a degraded snapshot.`);
+      process.exit(1);
+    }
   }
 }
 

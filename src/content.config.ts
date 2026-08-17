@@ -5,12 +5,11 @@ import { z } from "astro:schema";
 import { file } from "astro/loaders";
 
 /**
- * The emne index, loaded through the Content Layer API.
+ * The video snapshot, loaded through the Content Layer API.
  *
  * `file()` is the right loader here: one JSON file holds many entries, produced
- * by `bun run crawl`. The schema validates the crawler's output at build time,
- * so a change in faktalink's payload shape fails the build instead of shipping
- * a half-empty index. The removed legacy glob API is not used anywhere here.
+ * by the scheduled crawl. The schema validates that output at build time, so a
+ * malformed snapshot fails the build instead of shipping a half-empty site.
  */
 const emner = defineCollection({
   loader: file("src/data/emner.json", {
@@ -26,8 +25,9 @@ const emner = defineCollection({
     videoCount: z.number().int().nonnegative(),
     videos: z.array(
       z.object({
-        // The 11-character YouTube ID, already extracted and deduplicated.
-        id: z.string().regex(/^[A-Za-z0-9_-]{11}$/),
+        // YouTube IDs are 11 URL-safe base64 characters; Vimeo IDs are numeric.
+        id: z.string().regex(/^[A-Za-z0-9_-]{11}$|^\d{6,12}$/),
+        provider: z.enum(["youtube", "vimeo"]),
         title: z.string().nullable(),
         description: z.string().nullable(),
         startSeconds: z.number().int().positive().nullable(),
