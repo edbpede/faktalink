@@ -85,6 +85,40 @@ test.describe("address field", () => {
     await expect(page.getByLabel(FIELD)).toHaveValue("");
     await expect(page.getByRole("button", { name: PLAY })).toHaveCount(0);
   });
+
+  test("a lookup abandoned mid-flight cannot repopulate the cleared field", async ({
+    page,
+    context,
+  }) => {
+    // Held open, then released, so the clear lands strictly between the
+    // request and its answer. A snapshot miss can idle for the better part of
+    // a minute in the wild; this reproduces that window deterministically.
+    let release: (() => void) | undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    await context.route("**/videoer/1970-erne.json", async (route) => {
+      await held;
+      await route.continue();
+    });
+
+    await page.goto("/");
+    await page.getByLabel(FIELD).fill("1970-erne");
+    await page.getByRole("button", { name: SUBMIT }).click();
+
+    await page.getByRole("button", { name: /ryd feltet/i }).click();
+    await expect(page.getByLabel(FIELD)).toHaveValue("");
+
+    release?.();
+
+    // The withdrawn question must stay withdrawn: no videos, no error, and a
+    // submit button the reader can use again immediately.
+    await expect(page.getByRole("button", { name: SUBMIT })).toBeEnabled();
+    await expect(page.getByRole("button", { name: PLAY })).toHaveCount(0);
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(page.getByLabel(FIELD)).toHaveValue("");
+  });
 });
 
 test.describe("errors name the actual problem", () => {

@@ -103,9 +103,26 @@
     error = null;
   }
 
+  /**
+   * Identifies the lookup the reader is currently waiting for.
+   *
+   * A lookup can stay in flight for the better part of a minute: a snapshot
+   * miss waits 8 s, then the live fallback walks four proxies at 12 s each.
+   * The field and the clear button stay usable throughout, on purpose — being
+   * made to watch a spinner is not a fix for a slow origin. So the reader can
+   * abandon a lookup that is still running, and the answer to a question they
+   * have already withdrawn must not be allowed to land.
+   *
+   * Plain `let`, not `$state`: nothing renders this, it only decides whether a
+   * settled request may still speak.
+   */
+  let requestId = 0;
+
   async function submit(event: SubmitEvent) {
     event.preventDefault();
     if (busy) return;
+
+    const id = ++requestId;
 
     error = null;
     result = null;
@@ -114,6 +131,11 @@
 
     try {
       const lookup = await lookupEmne(value, base);
+
+      // Superseded while we waited: the reader cleared the field, so these
+      // videos belong to an address that is no longer on screen.
+      if (id !== requestId) return;
+
       if (lookup.ok) {
         result = lookup.emne;
         source = lookup.source;
@@ -121,11 +143,19 @@
         error = lookup.reason;
       }
     } finally {
-      busy = false;
+      // Only the live request owns the spinner. An abandoned one must not
+      // re-enable the button underneath the lookup that replaced it.
+      if (id === requestId) busy = false;
     }
   }
 
   function clear() {
+    // Abandons any lookup still running, so it cannot repopulate the field the
+    // reader just emptied. Clearing also releases the button: waiting out a
+    // request you have cancelled is not something to ask of anyone.
+    requestId++;
+    busy = false;
+
     value = "";
     error = null;
     result = null;
