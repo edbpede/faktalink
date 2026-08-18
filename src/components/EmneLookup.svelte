@@ -99,6 +99,10 @@
     const pasted = event.clipboardData?.getData("text");
     if (pasted === undefined || pasted === "") return;
     event.preventDefault();
+    // Pasting replaces the address outright, so whatever is in flight is
+    // answering the wrong question. `preventDefault` means no input event
+    // follows, so this path has to abandon it itself.
+    abandonPending();
     value = normalise(pasted);
     error = null;
   }
@@ -118,6 +122,22 @@
    */
   let requestId = 0;
 
+  /**
+   * Gives up on the lookup still running, if there is one.
+   *
+   * Retiring the id stops the answer landing; releasing `busy` matters just as
+   * much, because `submit` refuses to start while it is set. Without this, a
+   * reader who spots their own typo mid-lookup cannot correct it until every
+   * proxy has timed out — the field accepts the fix, and then nothing happens
+   * for the better part of a minute. Editing is a new question; the button
+   * has to be available to ask it.
+   */
+  function abandonPending() {
+    if (!busy) return;
+    requestId++;
+    busy = false;
+  }
+
   async function submit(event: SubmitEvent) {
     event.preventDefault();
     if (busy) return;
@@ -132,8 +152,8 @@
     try {
       const lookup = await lookupEmne(value, base);
 
-      // Superseded while we waited: the reader cleared the field, so these
-      // videos belong to an address that is no longer on screen.
+      // Superseded while we waited: the reader has since cleared or rewritten
+      // the field, so this answers an address no longer on screen.
       if (id !== requestId) return;
 
       if (lookup.ok) {
@@ -150,11 +170,8 @@
   }
 
   function clear() {
-    // Abandons any lookup still running, so it cannot repopulate the field the
-    // reader just emptied. Clearing also releases the button: waiting out a
-    // request you have cancelled is not something to ask of anyone.
-    requestId++;
-    busy = false;
+    // The emptied field must not be repopulated by the lookup it replaced.
+    abandonPending();
 
     value = "";
     error = null;
@@ -201,7 +218,10 @@
       aria-describedby="emne-help"
       aria-invalid={error !== null && !hasResult}
       onpaste={onPaste}
-      oninput={() => (error = null)}
+      oninput={() => {
+        abandonPending();
+        error = null;
+      }}
     />
 
     {#if value !== ""}

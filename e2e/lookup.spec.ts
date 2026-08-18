@@ -86,6 +86,76 @@ test.describe("address field", () => {
     await expect(page.getByRole("button", { name: PLAY })).toHaveCount(0);
   });
 
+  test("editing mid-flight frees the button and drops the stale answer", async ({
+    page,
+    context,
+  }) => {
+    let release: (() => void) | undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    await context.route("**/videoer/1970-erne.json", async (route) => {
+      await held;
+      await route.continue();
+    });
+
+    await page.goto("/");
+    await page.getByLabel(FIELD).fill("1970-erne");
+    await page.getByRole("button", { name: SUBMIT }).click();
+
+    // Spotting your own typo must not cost you the wait: correcting the field
+    // has to re-enable the button straight away, not after every proxy has
+    // timed out.
+    await page.getByLabel(FIELD).fill("den-kolde-krig");
+    await expect(page.getByRole("button", { name: SUBMIT })).toBeEnabled();
+
+    release?.();
+
+    // The answer to the abandoned address must not arrive against the new one.
+    await expect(page.getByRole("button", { name: PLAY })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: /1970'erne/i })).toHaveCount(0);
+
+    // And the corrected address still works.
+    await page.getByRole("button", { name: SUBMIT }).click();
+    await expect(page.getByRole("button", { name: PLAY }).first()).toBeVisible();
+  });
+
+  test("pasting over a pending lookup drops it too", async ({ page, context }) => {
+    let release: (() => void) | undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    await context.route("**/videoer/1970-erne.json", async (route) => {
+      await held;
+      await route.continue();
+    });
+
+    await page.goto("/");
+    await page.getByLabel(FIELD).fill("1970-erne");
+    await page.getByRole("button", { name: SUBMIT }).click();
+
+    // Paste takes its own route: onPaste calls preventDefault and assigns the
+    // value directly, so no input event follows and this path has to abandon
+    // the pending lookup itself.
+    await page.evaluate(async () => {
+      const input = document.querySelector<HTMLInputElement>("#emne-input");
+      if (input === null) throw new Error("field not found");
+      const data = new DataTransfer();
+      data.setData("text", "https://faktalink.dk/emner/den-kolde-krig");
+      input.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true }));
+    });
+
+    await expect(page.getByLabel(FIELD)).toHaveValue("den-kolde-krig");
+    await expect(page.getByRole("button", { name: SUBMIT })).toBeEnabled();
+
+    release?.();
+
+    await expect(page.getByRole("button", { name: PLAY })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: /1970'erne/i })).toHaveCount(0);
+  });
+
   test("a lookup abandoned mid-flight cannot repopulate the cleared field", async ({
     page,
     context,
