@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { resolveEmneInput } from "./resolve-input";
+import { resolveEmneInput } from "./lookup";
 
 describe("resolveEmneInput", () => {
   test("resolves a full faktalink emne URL", () => {

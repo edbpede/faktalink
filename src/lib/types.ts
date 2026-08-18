@@ -6,29 +6,25 @@
  * from a .svelte file so both Astro pages and Svelte components can import them.
  */
 
-/** A video as handed to the VideoList island. */
+import type { VideoProvider } from "./extract";
+
+export type { VideoProvider };
+
+/** A video as handed to the result list and the player. */
 export interface VideoProps {
   id: string;
+  provider: VideoProvider;
   title: string | null;
   description: string | null;
   startSeconds: number | null;
 }
 
-/** One row of the browse index. */
-export interface EmneEntry {
+/** One page's worth of videos, as served by the snapshot and the live lookup. */
+export interface EmneResult {
   slug: string;
   title: string;
-  videoCount: number;
+  videos: VideoProps[];
 }
 
-/** The labels VideoList needs, resolved in the page's locale. */
-export interface VideoLabels {
-  play: string;
-  playLabel: string;
-  fallback: string;
-  fallbackHint: string;
-  posterAlt: string;
-  idLabel: string;
-  startsAt: string;
-  untitled: string;
-}
+/** Where a result came from, so the UI can be honest about freshness. */
+export type ResultSource = "snapshot" | "live";

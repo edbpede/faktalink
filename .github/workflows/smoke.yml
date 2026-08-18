@@ -1,11 +1,17 @@
 # Tier-1 smoke test: build the site, serve it, and prove every real route loads.
 #
 # Deliberately NOT a browser test. It verifies that the app builds, boots and
-# serves real content, and it will NOT catch client-side breakage: these pages
-# are prerendered, so an emne page returns 200 with all 13 posters in the HTML
-# even when a svelte or astro bump has broken island hydration. That coverage is
-# the Playwright suite's job and runs in `tests.yml`; this workflow exists to
-# give a fast, independent "the site still serves" signal in under a minute.
+# serves real content, and it will NOT catch client-side breakage: the lookup,
+# the results list and the player are all client-side, so this workflow cannot
+# see them. That coverage is the Playwright suite's job and runs in `tests.yml`;
+# this workflow exists to give a fast, independent "the site still serves"
+# signal in under a minute.
+#
+# What it can prove, and what nothing else proves as cheaply, is that the
+# snapshot actually reached the build: the per-page JSON the client fetches is
+# generated at build time from the committed data, so a broken loader shows up
+# here as a missing or empty file rather than as a silent "no videos" in a
+# reader's browser.
 #
 # code-quality.yml and tests.yml also build this repo. Keeping smoke in its own
 # workflow costs one extra build per push; that is the accepted tradeoff for
@@ -74,58 +80,67 @@ jobs:
           # depends on response size and timing, so the piped form is
           # intermittently red rather than reliably broken.
           #
-          # Every route the site publishes is listed: the Danish default locale
-          # and the /en prefix, which is where a routing or i18n regression
-          # shows up first, plus one real emne page per locale.
-          for path in / /emner /indsaet /emner/1970-erne /en/ /en/emner /en/indsaet /en/emner/1970-erne; do
+          # The site publishes two HTML routes: the Danish default locale and
+          # the /en prefix, which is where a routing or i18n regression shows up
+          # first.
+          for path in / /en/; do
             echo "==> ${path}"
             curl -fsS -m 10 -o "${RUNNER_TEMP}/page.html" "http://127.0.0.1:4321${path}"
             grep -q '<title>' "${RUNNER_TEMP}/page.html" \
               || { echo "SMOKE FAILED: ${path} served no <title>"; exit 1; }
           done
 
-          # The reference emne page must carry all 13 posters. This is the one
-          # assertion that proves the committed index actually reached the
-          # rendered HTML: a broken content collection or loader still serves a
-          # 200 with a valid <title> and no videos at all.
-          echo "==> 13 posters on /emner/1970-erne"
-          curl -fsS -m 10 -o "${RUNNER_TEMP}/emne.html" "http://127.0.0.1:4321/emner/1970-erne"
-          posters=$(grep -o 'hqdefault\.jpg' "${RUNNER_TEMP}/emne.html" | wc -l | tr -d ' ')
-          [ "${posters}" = "13" ] \
-            || { echo "SMOKE FAILED: expected 13 posters, found ${posters}"; exit 1; }
+          # The address field is the page's entire purpose. If it is missing,
+          # the site is serving a shell with nothing to use.
+          echo "==> the address field is present"
+          curl -fsS -m 10 -o "${RUNNER_TEMP}/home.html" "http://127.0.0.1:4321/"
+          grep -q 'id="emne-input"' "${RUNNER_TEMP}/home.html" \
+            || { echo "SMOKE FAILED: the home page has no address field"; exit 1; }
 
-          # Attribution is a scope commitment, not a nicety: every emne page
-          # links back to its faktalink source. Cheap to assert, and it fails
-          # loudly if a refactor drops the link.
-          echo "==> attribution link back to faktalink.dk"
-          grep -q 'https://faktalink.dk/emner/1970-erne' "${RUNNER_TEMP}/emne.html" \
-            || { echo "SMOKE FAILED: emne page does not link back to faktalink"; exit 1; }
-
-          # The static JSON index is what the home-page resolver fetches to tell
-          # "not in the index" apart from "typo". It is not an HTML route, so it
-          # needs its own shape assertion rather than a <title> check.
-          echo "==> /emner-index.json"
-          curl -fsS -m 10 -o "${RUNNER_TEMP}/index.json" "http://127.0.0.1:4321/emner-index.json"
+          # The per-page snapshot the client fetches. This is the assertion that
+          # proves the committed data reached the build: a broken content loader
+          # still serves a 200 home page with a working-looking field and no
+          # data behind it at all.
+          echo "==> /videoer/1970-erne.json"
+          curl -fsS -m 10 -o "${RUNNER_TEMP}/emne.json" \
+            "http://127.0.0.1:4321/videoer/1970-erne.json"
           bun -e '
-            const entries = await Bun.file(process.env.RUNNER_TEMP + "/index.json").json();
-            if (!Array.isArray(entries) || entries.length === 0) {
-              throw new Error("index is not a non-empty array");
+            const entry = await Bun.file(process.env.RUNNER_TEMP + "/emne.json").json();
+            if (entry?.slug !== "1970-erne") throw new Error("wrong slug: " + entry?.slug);
+            if (!Array.isArray(entry.videos) || entry.videos.length !== 13) {
+              throw new Error("expected 13 videos, got " + entry?.videos?.length);
             }
-            const bad = entries.find(
-              (e) => typeof e?.slug !== "string" || typeof e?.title !== "string" || typeof e?.videoCount !== "number",
-            );
-            if (bad) throw new Error("malformed entry: " + JSON.stringify(bad));
-            if (!entries.some((e) => e.slug === "1970-erne" && e.videoCount === 13)) {
-              throw new Error("1970-erne is missing or does not report 13 videos");
+            for (const v of entry.videos) {
+              if (typeof v?.id !== "string" || v.id === "") throw new Error("empty video id");
+              if (v.provider !== "youtube" && v.provider !== "vimeo") {
+                throw new Error("unknown provider: " + v.provider);
+              }
             }
-            console.log("index OK:", entries.length, "emner");
+            console.log("snapshot OK:", entry.title, "-", entry.videos.length, "videos");
           '
+
+          # A page absent from the snapshot must 404 rather than serve an empty
+          # document: that 404 is how the client decides to try the live lookup.
+          echo "==> a page outside the snapshot 404s"
+          status=$(curl -sS -m 10 -o /dev/null -w '%{http_code}' \
+            "http://127.0.0.1:4321/videoer/findes-ikke-nogen-steder.json")
+          [ "${status}" = "404" ] \
+            || { echo "SMOKE FAILED: unknown snapshot returned ${status}, expected 404"; exit 1; }
+
+          # The catalogue routes the single-page refactor removed. A stale link
+          # must 404 rather than serve a half-working page.
+          echo "==> removed routes stay removed"
+          for path in /emner /emner/1970-erne /indsaet /en/emner; do
+            status=$(curl -sS -m 10 -o /dev/null -w '%{http_code}' "http://127.0.0.1:4321${path}")
+            [ "${status}" = "404" ] \
+              || { echo "SMOKE FAILED: ${path} returned ${status}, expected 404"; exit 1; }
+          done
 
           # A static host serves the 404 page with a 404 status. `curl -f` would
           # abort on that, so this probe checks the status code explicitly.
           echo "==> 404 handling"
           status=$(curl -sS -m 10 -o "${RUNNER_TEMP}/404.html" -w '%{http_code}' \
-            "http://127.0.0.1:4321/emner/der-findes-ikke")
+            "http://127.0.0.1:4321/der-findes-ikke")
           [ "${status}" = "404" ] \
             || { echo "SMOKE FAILED: unknown route returned ${status}, expected 404"; exit 1; }
           grep -q '<title>' "${RUNNER_TEMP}/404.html" \

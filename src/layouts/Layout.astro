@@ -1,7 +1,7 @@
 ---
 import ThemeToggle from "../components/ThemeToggle.svelte";
 import { HTML_LANG, type Locale, useTranslations } from "../i18n";
-import { alternatePath, browsePath, homePath, pastePath } from "../lib/paths";
+import { alternatePath, homePath } from "../lib/paths";
 import "../styles/global.css";
 
 interface Props {
@@ -15,15 +15,6 @@ const t = useTranslations(locale);
 
 const currentPath = Astro.url.pathname;
 const siteUrl = Astro.site;
-
-const nav = [
-  { href: homePath(locale), label: t("navHome") },
-  { href: browsePath(locale), label: t("navBrowse") },
-  { href: pastePath(locale), label: t("navPaste") },
-];
-
-const isCurrent = (href: string) =>
-  currentPath === href || currentPath === `${href}/` || `${currentPath}/` === href;
 
 const alternates: { locale: Locale; hreflang: string; href: string }[] = [
   { locale: "da", hreflang: "da", href: alternatePath(currentPath, "da") },
@@ -94,8 +85,14 @@ const otherLabel = other === "da" ? t("languageDanish") : t("languageEnglish");
       {t("skipToContent")}
     </a>
 
-    <div class="mx-auto flex min-h-screen w-full max-w-5xl flex-col px-5 sm:px-8">
-      <header class="flex flex-wrap items-center justify-between gap-4 py-6">
+    <div class="mx-auto flex min-h-screen w-full max-w-3xl flex-col px-5 sm:px-8">
+      {
+        /*
+        The header carries the wordmark and the two view controls, and nothing
+        else. There is one page, so there is nothing to navigate to.
+      */
+      }
+      <header class="flex items-center justify-between gap-4 py-6">
         <a
           href={homePath(locale)}
           class="focus-ring group rounded no-underline"
@@ -110,20 +107,6 @@ const otherLabel = other === "da" ? t("languageDanish") : t("languageEnglish");
         </a>
 
         <div class="flex items-center gap-2">
-          <nav aria-label={t("navBrowse")} class="mr-1 hidden items-center gap-1 sm:flex">
-            {
-              nav.map((item) => (
-                <a
-                  href={item.href}
-                  aria-current={isCurrent(item.href) ? "page" : undefined}
-                  class="focus-ring rounded-md px-2.5 py-1.5 text-xs font-medium text-muted-foreground no-underline transition-colors hover:(bg-accent text-foreground) aria-[current=page]:(bg-accent text-foreground)"
-                >
-                  {item.label}
-                </a>
-              ))
-            }
-          </nav>
-
           <a
             href={alternatePath(currentPath, other)}
             hreflang={other}
@@ -143,25 +126,11 @@ const otherLabel = other === "da" ? t("languageDanish") : t("languageEnglish");
         </div>
       </header>
 
-      <hr class="rule" />
-
-      <main id="main" class="flex-1 py-10 sm:py-14">
+      <main id="main" class="flex-1 py-8 sm:py-12">
         <slot />
       </main>
 
       <footer class="border-t border-border py-8">
-        <nav aria-label={t("navBrowse")} class="mb-4 flex flex-wrap gap-x-5 gap-y-2 sm:hidden">
-          {
-            nav.map((item) => (
-              <a
-                href={item.href}
-                class="focus-ring rounded text-xs font-medium text-muted-foreground no-underline hover:text-foreground"
-              >
-                {item.label}
-              </a>
-            ))
-          }
-        </nav>
         <p class="m-0 max-w-2xl text-xs leading-relaxed text-muted-foreground">
           {t("footerSource")}
         </p>

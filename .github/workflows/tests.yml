@@ -2,9 +2,9 @@
 # Playwright end-to-end run.
 #
 # The extractor is the one piece of logic both entry paths depend on — the
-# build-time crawler and the browser paste-HTML fallback — so its unit suite
-# gates every push. The bundle budget is the brief's hard 50 KB limit on an emne
-# page, asserted here rather than checked by hand.
+# scheduled crawler and the browser's live fallback — so its unit suite gates
+# every push. The bundle budget caps the JavaScript the landing page ships
+# before any video is played, asserted here rather than checked by hand.
 #
 # Formatting, hooks, types and the plain build live in code-quality.yml, and
 # route loading in smoke.yml. Nothing is duplicated here.
@@ -53,9 +53,9 @@ jobs:
       - name: Build
         run: bun run build
 
-      # An emne page must ship under 50 KB of JS before any video is clicked.
-      # The Svelte runtime alone is ~35 KB, so the headroom is genuinely thin
-      # and worth gating rather than trusting.
+      # The landing page must stay under its JS budget before any video is
+      # played. The Svelte runtime alone is ~37 KB, so the headroom is genuinely
+      # thin and worth gating rather than trusting.
       - name: Bundle budget
         run: bun run check:bundle
 

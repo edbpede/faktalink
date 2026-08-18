@@ -1,0 +1,150 @@
+# Refresh the video snapshot from faktalink.dk and commit any changes.
+#
+# faktalink.dk sends no `Access-Control-Allow-Origin` header, so a browser on
+# our domain cannot fetch it directly. The alternative — routing every lookup
+# through a public CORS proxy — was measured and rejected: three consecutive
+# requests to different proxies returned 429, 522 and 403. That is not a
+# dependency to put in front of school Chromebooks behind DNS filters.
+#
+# So the crawl runs here instead, where CORS does not exist, and commits the
+# result. The site then answers the common case from a committed snapshot with
+# no third party involved at request time. Pages newer than the last crawl are
+# still resolved live in the browser as a best-effort fallback.
+#
+# Twice daily: faktalink publishes on a newsroom cadence, not a live feed, so
+# a 12-hour worst-case staleness window costs little and keeps the commit noise
+# low. The job is a no-op commit-wise when nothing changed.
+name: Refresh video snapshot
+
+on:
+  schedule:
+    # 04:10 and 16:10 UTC. Deliberately off the hour: GitHub's scheduler queues
+    # heavily at :00, and an offset run starts sooner and more predictably.
+    - cron: "10 4,16 * * *"
+  workflow_dispatch:
+
+# The job commits the refreshed snapshot back to the branch.
+permissions:
+  contents: write
+
+# Never run two crawls at once: both would push to the same branch and the
+# loser would fail on a non-fast-forward. Queued rather than cancelled, so a
+# manual dispatch during a scheduled run still completes.
+concurrency:
+  group: crawl-snapshot
+  cancel-in-progress: false
+
+jobs:
+  crawl:
+    name: Crawl · extract · commit
+    runs-on: ubuntu-latest
+    # 505 pages at concurrency 6 with a 120 ms courtesy delay takes ~4 minutes;
+    # the ceiling is for a slow origin, not the expected case.
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          # Derived from the committed `packageManager` field, not `latest`.
+          bun-version-file: package.json
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # `--refresh` bypasses the on-disk cache, which does not exist on a fresh
+      # runner anyway. Stated explicitly so the intent survives a cache being
+      # added later: a scheduled crawl must always hit the live site.
+      #
+      # The script exits non-zero if more than 20% of pages fail, so a bad run
+      # fails the job instead of committing a degraded snapshot.
+      - name: Refresh the snapshot
+        run: bun run crawl:refresh
+
+      # The snapshot is the site's data source, so a malformed one must never
+      # reach main. This is the same schema the build validates, checked here
+      # where the failure is cheap and attributable to the crawl.
+      - name: Validate the snapshot
+        run: |
+          bun -e '
+            const entries = await Bun.file("src/data/emner.json").json();
+            if (!Array.isArray(entries) || entries.length === 0) {
+              throw new Error("snapshot is not a non-empty array");
+            }
+            let videos = 0;
+            for (const e of entries) {
+              if (typeof e?.slug !== "string" || typeof e?.title !== "string") {
+                throw new Error("malformed entry: " + JSON.stringify(e).slice(0, 200));
+              }
+              if (!Array.isArray(e.videos) || e.videos.length !== e.videoCount) {
+                throw new Error(e.slug + ": videoCount does not match videos.length");
+              }
+              for (const v of e.videos) {
+                if (v.provider !== "youtube" && v.provider !== "vimeo") {
+                  throw new Error(e.slug + ": unknown provider " + v.provider);
+                }
+                if (typeof v.id !== "string" || v.id === "") {
+                  throw new Error(e.slug + ": empty video id");
+                }
+                videos++;
+              }
+            }
+            console.log("snapshot OK:", entries.length, "pages,", videos, "videos");
+          '
+
+      # A crawl that loses a large share of the index means faktalink changed
+      # shape or was unreachable, not that the videos are gone. Fail loudly and
+      # leave the previous snapshot in place rather than publishing the loss.
+      - name: Guard against a collapsed snapshot
+        run: |
+          set -euo pipefail
+          before=$(git show HEAD:src/data/emner.json | bun -e 'console.log((await Bun.stdin.json()).length)')
+          after=$(bun -e 'console.log((await Bun.file("src/data/emner.json").json()).length)')
+          echo "pages before: ${before}, after: ${after}"
+          floor=$(( before * 80 / 100 ))
+          if [ "${after}" -lt "${floor}" ]; then
+            echo "REFUSING: ${after} pages is below 80% of the previous ${before}."
+            echo "faktalink.dk likely changed shape. Inspect before committing."
+            exit 1
+          fi
+
+      - name: Commit the refreshed snapshot
+        id: commit
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- src/data/emner.json; then
+            echo "No change in the snapshot; nothing to commit."
+            echo "changed=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          pages=$(bun -e 'console.log((await Bun.file("src/data/emner.json").json()).length)')
+          videos=$(bun -e '
+            const e = await Bun.file("src/data/emner.json").json();
+            console.log(e.reduce((n, x) => n + x.videos.length, 0));
+          ')
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/data/emner.json
+          # [skip ci] marks this as a data-only change: the quality, test and
+          # smoke tiers have nothing to say about it. It is belt-and-braces —
+          # a GITHUB_TOKEN push raises no workflow events at all (see below).
+          git commit -m "chore(data): refresh video snapshot [skip ci]" \
+            -m "${pages} pages with video, ${videos} videos, crawled $(date -u +%Y-%m-%dT%H:%MZ)."
+          git push
+          echo "changed=true" >> "${GITHUB_OUTPUT}"
+
+      # A push authenticated with GITHUB_TOKEN deliberately raises no workflow
+      # events, so deploy.yml would never see this commit and the refreshed
+      # snapshot would sit on main without ever reaching the site. The deploy is
+      # therefore dispatched explicitly. deploy.yml's `[skip ci]` guard reads
+      # `github.event.head_commit.message || ''`, which is null-safe precisely
+      # for a workflow_dispatch, so this runs even though the commit is marked.
+      - name: Publish the refreshed snapshot
+        if: steps.commit.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run deploy.yml --ref main

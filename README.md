@@ -1,6 +1,7 @@
-# Faktalink Video Viewer
+# Faktalink Video
 
-Find and play every video embedded on a [faktalink.dk](https://faktalink.dk) emne page.
+Paste a [faktalink.dk](https://faktalink.dk) address, get the videos on that page — playable,
+in a real player.
 
 ## Why this exists
 
@@ -19,15 +20,24 @@ broken for a large group of users:
 A bookmarklet fixes this, but bookmarklets are blocked on managed ChromeOS devices through
 the `URLBlocklist` policy entry `javascript://*`. So the fix has to be an ordinary website.
 
-This is that fix. Paste a faktalink URL and get a clean, playable list of every video on
-that page.
+## The site
 
-## How it works
+One page. A heading, an address field, and the videos for whatever address is submitted.
 
-faktalink.dk is a Next.js Pages Router site, so every page ships its full content as JSON
-inside `<script id="__NEXT_DATA__" type="application/json">`. Videos appear as objects with
-`__typename === "ComponentSharedVideo"`. **That data is present regardless of consent**, so
-this project handles no consent logic at all.
+The field renders `faktalink.dk/emner/` as a real prefix inside the control, so it documents
+the format it expects and the caret sits exactly where the topic name goes. Pasting a full
+address strips it to the slug. Below roughly 26rem of field width the prefix would take more
+room than the slug it precedes, so it moves to the label and the whole field goes to the
+input.
+
+Clicking a video opens a modal player built on the native `<dialog>` element, which supplies
+the focus trap, the inert background, the top layer and Esc-to-close rather than
+reimplementing them. Playback goes through `https://www.yout-ube.com/embed/<ID>` — the `www.`
+host directly, so users never eat the apex's 301. It sets no `X-Frame-Options` and no
+`frame-ancestors`, so it embeds cleanly. Every video also carries a plain `youtube.com/watch`
+link, so it stays reachable if the embed host is down or blocked.
+
+## How a lookup works
 
 ### The CORS constraint
 
@@ -38,59 +48,62 @@ curl -sSI -H "Origin: https://example.com" https://faktalink.dk/emner/1970-erne 
 # returns nothing
 ```
 
-A browser on this site's domain therefore cannot fetch a faktalink page, which rules out the
-obvious paste-URL-then-fetch design. Shipping a third-party CORS proxy would add an
-uncontrolled dependency, leak user browsing to a stranger, and break the moment that proxy
-rate-limits us.
+A browser on this site's domain therefore cannot fetch a faktalink page directly. Routing
+every lookup through a public CORS proxy was measured and rejected — three consecutive
+requests to different providers returned `429`, `522` and `403`. That is not a dependency to
+put in front of school Chromebooks that are already behind DNS filters.
 
-It is solved at build time instead, where CORS does not exist:
+### Snapshot first, live second
 
-1. `bun run crawl` fetches the sitemap, keeps the `/emner/` URLs, and fetches each page at a
-   concurrency of 6 with a real `User-Agent`, caching every response on disk.
-2. Each page's `__NEXT_DATA__` is walked structurally for video objects.
-3. The result is committed to `src/data/emner.json` and loaded through a Content Layer
-   `file()` loader, so **a build needs no network access at all**.
+1. **Snapshot.** `.github/workflows/crawl.yml` crawls faktalink twice daily, where CORS does
+   not exist, and commits the result to `src/data/emner.json`. The build turns that into one
+   small JSON file per page at `/videoer/<slug>.json`, so the browser fetches a couple of
+   kilobytes to answer one question rather than a ~280 KB index. No third party is involved.
+2. **Live.** A page published since the last crawl is not in the snapshot, and its request
+   404s. Only then does the client fetch the live page through a CORS proxy and parse it in
+   the browser with the same extractor the crawl uses. This is best-effort by design.
 
-### The paste-HTML fallback
+A page that genuinely holds no video says so. "Could not be fetched" and "has no videos" are
+reported as different things, because they are.
 
-For pages published after the last crawl, `/indsaet` accepts raw pasted page source
-(`Ctrl+U`, `Ctrl+A`, `Ctrl+C`). It parses in the browser with `DOMParser` and runs the exact
-same extractor — zero network, works offline.
+### The extractor
 
-Both paths import one pure module, `src/lib/extract.ts`. The parser is not written twice.
+Deliberately pattern-based rather than structure-based. faktalink edits its pages often, so
+nothing depends on a CSS path, a component `__typename`, or a fixed JSON location. Two
+independent passes run over every page and their results are merged:
+
+1. **JSON pass** — parses any embedded payload and walks the whole tree for objects carrying
+   a recognisable video URL in any of several likely keys, reading title and description from
+   the object that holds the URL.
+2. **Raw pass** — regexes the page text itself for provider URLs and iframe embeds, seeing
+   through JSON escaping (`\/`, `\u002F`) and HTML entities.
+
+The raw pass is the safety net: it matches URLs inside JSON string literals as readily as in
+markup, so a front-end rewrite still yields videos as long as the page references YouTube or
+Vimeo at all. Verified against all 505 cached pages — renaming the video component, deleting
+the JSON payload, and serving plain iframe markup each still extract correctly.
 
 ### Deduplication
 
-Videos are deduplicated **by extracted video ID, never by raw URL string**. faktalink
+Videos are deduplicated **by provider and extracted ID, never by raw URL string**. faktalink
 publishes the same video as `https://youtu.be/ID`, `https://www.youtube.com/watch?v=ID`, and
-occasionally with a `&t=` timestamp, and duplicates every video across `subject.content` and
-`subject.pages[].sections[].content`. On `/emner/1970-erne` that is 26 raw nodes collapsing
-to 13 videos.
+occasionally with a `?t=` timestamp, and duplicates every video across `subject.content` and
+`subject.pages[].sections[].content`. On `/emner/rusland-op-til-1991` that is 10 raw nodes
+collapsing to 5 videos.
 
-### Playback
-
-Videos play through `https://www.yout-ube.com/embed/<ID>` — the `www.` host directly, so
-users never eat the apex's 301 redirect. It sets no `X-Frame-Options` and no
-`frame-ancestors`, so it embeds cleanly.
-
-Cards are click-to-play: a page with 13 videos renders 13 poster images and mounts an iframe
-only when one is clicked. Every video also carries a plain `youtube.com/watch` fallback link,
-so it stays reachable if `yout-ube.com` is down or blocked.
-
-## Index coverage
+## Coverage
 
 Verified against the live site at the last crawl:
 
-|                                           |               |
-| ----------------------------------------- | ------------- |
-| `/emner/` pages in the sitemap            | 505           |
-| Pages carrying at least one YouTube video | 429           |
-| YouTube videos indexed                    | 874           |
-| Vimeo videos found (not indexed)          | 3, on 3 pages |
+|                                   |      |
+| --------------------------------- | ---- |
+| `/emner/` pages in the sitemap    | 505  |
+| Pages carrying at least one video | 443  |
+| Videos indexed                    | 1087 |
+| of which Vimeo                    | 9    |
 
-Three videos across the site are Vimeo, which `yout-ube.com` cannot play, so they are skipped;
-one of those pages has no YouTube video at all and is therefore not indexed. Counting them
-gives the 430 pages / 877 videos figure quoted in the original brief.
+Videos also appear as curated source links in faktalink's "Baggrundskilder" sections. Those
+are real, editorially titled clips, so they are extracted too.
 
 ## Commands
 
@@ -101,11 +114,11 @@ bun run dev             # dev server
 bun run build           # static build, no network needed
 bun run check           # type-check .astro and .svelte
 
-bun test                # extractor unit tests (scoped to src/ by bunfig.toml)
+bun test                # extractor and lookup unit tests
 bun run test:e2e        # Playwright, against the real build
-bun run check:bundle    # assert the 50 KB JS budget on an emne page
+bun run check:bundle    # assert the JS budget on the landing page
 
-bun run crawl           # refresh the index (uses the on-disk cache)
+bun run crawl           # refresh the snapshot (uses the on-disk cache)
 bun run crawl:refresh   # refresh, bypassing the cache
 bun run tokens          # regenerate the caffeine token stylesheet
 
@@ -119,31 +132,32 @@ SKIP=no-commit-to-branch,build prek run --all-files --hook-stage manual
 
 ## Continuous integration
 
-Four workflows, each owning one tier and nothing else:
-
 | Workflow           | Runs                                                                |
 | ------------------ | ------------------------------------------------------------------- |
 | `code-quality.yml` | Biome, the full prek hook set, `astro check`, build                 |
-| `tests.yml`        | Unit suite, the 50 KB bundle budget, Playwright                     |
+| `tests.yml`        | Unit suite, the bundle budget, Playwright                           |
 | `smoke.yml`        | Builds, serves `dist/`, asserts every route loads with real content |
+| `crawl.yml`        | Refreshes the video snapshot twice daily and commits any change     |
 | `deploy.yml`       | Publishes `dist/` to the `gh-pages` branch on push to `main`        |
 
-Smoke is deliberately not a browser test. These pages are prerendered, so an emne page
-returns 200 with all 13 posters even when island hydration is broken; that coverage belongs
-to Playwright. Smoke exists to give a fast, independent "the site still serves" signal.
+The crawl writes to `main` unattended, so it is fenced: the crawl fails if more than 20% of
+pages error, the snapshot is schema-validated before it is committed, and a run yielding
+under 80% of the previous page count refuses to commit at all — a faktalink redesign fails
+loudly rather than quietly publishing the loss. Nothing is committed when nothing changed.
+The deploy is dispatched explicitly afterwards, because a push authenticated with
+`GITHUB_TOKEN` raises no workflow events.
 
 ## Deployment
 
-The site is published to GitHub Pages at **https://faktalink.edbpede.net** by
-`peaceiris/actions-gh-pages`, which force-pushes `dist/` to the `gh-pages` branch and
-rewrites the `CNAME` file on every run — which is why the custom domain survives a redeploy
-instead of being reset.
+Published to GitHub Pages at **https://faktalink.edbpede.net** by `peaceiris/actions-gh-pages`,
+which force-pushes `dist/` to the `gh-pages` branch and rewrites the `CNAME` file on every
+run — which is why the custom domain survives a redeploy instead of being reset.
 
 Because it serves from the root of a custom domain, `astro.config.mjs` sets no `base`. A
 GitHub Pages _project_ subpath would need `base: "/faktalink"` restored and the Playwright
 and smoke URLs adjusted to match.
 
-The build needs no network access: the emne index is committed, so a deploy publishes exactly
+The build needs no network access: the snapshot is committed, so a deploy publishes exactly
 what a local `bun run build` produces.
 
 ## Stack
@@ -158,25 +172,25 @@ between deploys. Light is the default; dark toggles the `.dark` class on `<html>
 with `@nanostores/persistent` and applied by a pre-paint inline script so a dark-mode reload
 never flashes white.
 
-The site ships about 20 KB of gzipped JavaScript on an emne page before any video is clicked:
-the theme toggle, the click-to-play card list, the browse filter and the paste parser are the
-only islands.
+The page ships about 23 KB of gzipped JavaScript before any video is played. The extractor
+and the modal player load only when they are actually needed — on a live lookup and on the
+first play respectively — so neither is in the bundle a reader downloads just to search.
 
 ## Internationalisation
 
-Danish is the default locale and lives at the root (`/`, `/emner/...`); English is prefixed
-(`/en/`, `/en/emner/...`). UI strings come from typed message objects sharing one key type, so
-a missing translation is a compile error rather than a runtime blank.
+Danish is the default locale and lives at the root (`/`); English is prefixed (`/en/`). UI
+strings come from typed message objects sharing one key type, so a missing translation is a
+compile error rather than a runtime blank.
 
-Content from faktalink — emne titles, video titles, descriptions — is Danish source data and
-is rendered as-is in both locales, never machine-translated. Inside the English pages those
+Content from faktalink — page titles, video titles, descriptions — is Danish source data and
+is rendered as-is in both locales, never machine-translated. Inside the English page those
 elements carry `lang="da"` so screen readers pronounce them correctly.
 
 ## Scope
 
-This site reads a public page's own published JSON and links out to the videos its editors
-chose to embed. It indexes `/emner/` pages only, does not mirror faktalink's article text, and
-every emne page links back to its faktalink source.
+This site reads a public page's own published data and links out to the videos its editors
+chose to embed. It covers `/emner/` pages only, does not mirror faktalink's article text, and
+every result links back to its faktalink source.
 
 ## Licence
 

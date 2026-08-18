@@ -29,21 +29,9 @@ export function homePath(locale: Locale): string {
   return withLocale(locale, "/");
 }
 
-export function browsePath(locale: Locale): string {
-  return withLocale(locale, "/emner");
-}
-
-export function emnePath(locale: Locale, slug: string): string {
-  return withLocale(locale, `/emner/${slug}`);
-}
-
-export function pastePath(locale: Locale): string {
-  return withLocale(locale, "/indsaet");
-}
-
-/** The JSON index the browse filter and the home resolver fetch at runtime. */
-export function indexJsonPath(): string {
-  return withBase("/emner-index.json");
+/** The site base, handed to the lookup island so it can resolve the snapshot. */
+export function basePath(): string {
+  return withBase("/");
 }
 
 /**

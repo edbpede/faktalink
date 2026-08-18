@@ -1,130 +1,78 @@
-import { readFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
 
-/** Home resolution, browse filtering, the paste fallback, i18n and theming. */
+/** Routing, i18n, theming, accessibility and the snapshot endpoint. */
 
-test.describe("home page", () => {
-  test("resolves a full faktalink URL to its emne page", async ({ page }) => {
-    await page.goto("/");
-    await page
-      .getByLabel(/adresse eller emnenavn/i)
-      .fill("https://faktalink.dk/emner/1970-erne");
-    await page.getByRole("button", { name: /vis videoer/i }).click();
+const FIELD = /adresse eller emnenavn/i;
+const EN_FIELD = /address or topic name/i;
 
-    await page.waitForURL(/\/emner\/1970-erne/);
-    await expect(page.getByRole("button", { name: /afspil videoen/i })).toHaveCount(13);
+test.describe("routes", () => {
+  test("serves exactly the pages the site still has", async ({ page }) => {
+    for (const path of ["/", "/en/"]) {
+      const response = await page.goto(path);
+      expect(response?.status(), path).toBe(200);
+      await expect(page.locator("h1")).toHaveCount(1);
+    }
   });
 
-  test("resolves a bare slug", async ({ page }) => {
-    await page.goto("/");
-    await page.getByLabel(/adresse eller emnenavn/i).fill("den-kolde-krig");
-    await page.getByRole("button", { name: /vis videoer/i }).click();
-
-    await page.waitForURL(/\/emner\/den-kolde-krig/);
-    await expect(page.getByRole("button", { name: /afspil videoen/i })).toHaveCount(1);
+  test("the removed catalogue routes are gone", async ({ page }) => {
+    // The brief removed browsing and the paste page. A stale link must 404
+    // rather than serve a half-working page.
+    for (const path of ["/emner", "/emner/1970-erne", "/indsaet", "/en/emner"]) {
+      const response = await page.goto(path);
+      expect(response?.status(), path).toBe(404);
+    }
   });
 
-  test("names the specific problem for a non-faktalink URL", async ({ page }) => {
-    await page.goto("/");
-    await page.getByLabel(/adresse eller emnenavn/i).fill("https://example.com/emner/x");
-    await page.getByRole("button", { name: /vis videoer/i }).click();
+  test("serves a per-page snapshot as JSON, and 404s an unknown page", async ({ request }) => {
+    const hit = await request.get("/videoer/1970-erne.json");
+    expect(hit.status()).toBe(200);
 
-    await expect(page.getByRole("alert")).toContainText(/ikke på faktalink\.dk/i);
-  });
+    const body = await hit.json();
+    expect(body.slug).toBe("1970-erne");
+    expect(Array.isArray(body.videos)).toBe(true);
+    expect(body.videos).toHaveLength(13);
+    for (const video of body.videos) {
+      expect(typeof video.id).toBe("string");
+      expect(["youtube", "vimeo"]).toContain(video.provider);
+    }
 
-  test("offers the paste fallback when a slug is not in the index", async ({ page }) => {
-    await page.goto("/");
-    await page.getByLabel(/adresse eller emnenavn/i).fill("et-emne-der-ikke-findes");
-    await page.getByRole("button", { name: /vis videoer/i }).click();
-
-    const alert = page.getByRole("alert");
-    await expect(alert).toContainText(/findes ikke i registeret/i);
-    await expect(alert.getByRole("link", { name: /indsæt sidekode/i })).toBeVisible();
-  });
-});
-
-test.describe("browse", () => {
-  test("filters the index client-side", async ({ page }) => {
-    await page.goto("/emner");
-    const rows = page.locator("main ul li");
-    const total = await rows.count();
-    expect(total).toBeGreaterThan(400);
-
-    await page.getByLabel(/søg blandt emner/i).fill("kolde krig");
-    await expect(rows).toHaveCount(1);
-    await expect(rows.first()).toContainText(/den kolde krig/i);
-  });
-
-  test("folds Danish characters so 'dodshjaelp' finds 'dødshjælp'", async ({ page }) => {
-    await page.goto("/emner");
-    await page.getByLabel(/søg blandt emner/i).fill("dodshjaelp");
-    await expect(page.locator("main ul li")).toHaveCount(1);
-  });
-
-  test("shows a real empty state, not a blank list", async ({ page }) => {
-    await page.goto("/emner");
-    await page.getByLabel(/søg blandt emner/i).fill("zzzzzzzz");
-    await expect(page.getByText(/ingen emner passer til søgningen/i)).toBeVisible();
-    await expect(page.getByRole("button", { name: /ryd søgning/i })).toBeVisible();
-  });
-});
-
-test.describe("paste-HTML fallback", () => {
-  test("extracts the same 13 videos from pasted source, with no network", async ({
-    page,
-    context,
-  }) => {
-    // Prove it is genuinely offline: block every external request first.
-    // Block every host except the local server, whichever way it is addressed.
-    // Matching on "not localhost" alone silently aborts the site itself as soon
-    // as baseURL is written as 127.0.0.1.
-    await context.route(
-      (url) => url.hostname !== "localhost" && url.hostname !== "127.0.0.1",
-      (route) => route.abort(),
-    );
-
-    // A committed fixture, not the gitignored crawler cache, so this passes in
-    // CI. It carries the real __NEXT_DATA__ video payload — including the same
-    // cross-section duplication the extractor must collapse — and none of
-    // faktalink's article prose.
-    const source = readFileSync("e2e/fixtures/1970-erne.html", "utf8");
-
-    await page.goto("/indsaet");
-    await page.getByLabel(/sidens kildekode/i).fill(source);
-    await page.getByRole("button", { name: /find videoer/i }).click();
-
-    // The same extractor the crawler uses, so the same 13 videos.
-    await expect(page.getByRole("button", { name: /afspil videoen/i })).toHaveCount(13);
-  });
-
-  test("explains what to do when the paste is not page source", async ({ page }) => {
-    await page.goto("/indsaet");
-    await page.getByLabel(/sidens kildekode/i).fill("<html><body>ingen data</body></html>");
-    await page.getByRole("button", { name: /find videoer/i }).click();
-
-    await expect(page.getByText(/kunne ikke læses/i)).toBeVisible();
+    // A 404 is how the client learns to try the live lookup instead.
+    const miss = await request.get("/videoer/findes-ikke-nogen-steder.json");
+    expect(miss.status()).toBe(404);
   });
 });
 
 test.describe("i18n", () => {
   test("serves Danish at the root and English under /en", async ({ page }) => {
-    await page.goto("/emner/1970-erne");
+    await page.goto("/");
     await expect(page.locator("html")).toHaveAttribute("lang", "da-DK");
 
-    await page.goto("/en/emner/1970-erne");
+    await page.goto("/en/");
     await expect(page.locator("html")).toHaveAttribute("lang", "en");
   });
 
-  test("marks Danish source content inside the English page", async ({ page }) => {
-    await page.goto("/en/emner/1970-erne");
-    // The emne title is faktalink's own Danish text and is never translated.
-    await expect(page.locator("h1[lang='da']")).toBeVisible();
+  test("the English page looks up the same pages", async ({ page }) => {
+    await page.goto("/en/");
+    await page.getByLabel(EN_FIELD).fill("1970-erne");
+    await page.getByRole("button", { name: /show videos/i }).click();
+
+    await expect(page.getByRole("button", { name: /play the video/i })).toHaveCount(13);
   });
 
-  test("the language switcher preserves the current route", async ({ page }) => {
-    await page.goto("/emner/1970-erne");
+  test("marks Danish source content inside the English page", async ({ page }) => {
+    await page.goto("/en/");
+    await page.getByLabel(EN_FIELD).fill("1970-erne");
+    await page.getByRole("button", { name: /show videos/i }).click();
+
+    // faktalink's own title is Danish and is never translated, so it carries
+    // its own lang for screen readers.
+    await expect(page.locator("h2[lang='da']").first()).toBeVisible();
+  });
+
+  test("the language switcher preserves the current page", async ({ page }) => {
+    await page.goto("/");
     await page.getByRole("link", { name: /sprog: engelsk/i }).click();
-    await expect(page).toHaveURL(/\/en\/emner\/1970-erne/);
+    await expect(page).toHaveURL(/\/en\/?$/);
   });
 });
 
@@ -144,15 +92,30 @@ test.describe("theme", () => {
 
 test.describe("accessibility", () => {
   test("the skip link is reachable and targets main", async ({ page }) => {
-    await page.goto("/emner/1970-erne");
+    await page.goto("/");
     await page.keyboard.press("Tab");
     const skip = page.getByRole("link", { name: /gå til indhold/i });
     await expect(skip).toBeFocused();
     await expect(skip).toHaveAttribute("href", "#main");
   });
 
-  test("an emne page has exactly one h1", async ({ page }) => {
-    await page.goto("/emner/1970-erne");
+  test("the page has exactly one h1 and a labelled field", async ({ page }) => {
+    await page.goto("/");
     await expect(page.locator("h1")).toHaveCount(1);
+
+    // The field is the page's purpose, so its label must be programmatic and
+    // not merely a placeholder.
+    const field = page.getByLabel(FIELD);
+    await expect(field).toBeVisible();
+    await expect(field).toHaveAttribute("id", "emne-input");
+  });
+
+  test("marks the field invalid when the address is rejected", async ({ page }) => {
+    await page.goto("/");
+    await page.getByLabel(FIELD).fill("https://example.com/x");
+    await page.getByRole("button", { name: /vis videoer/i }).click();
+
+    await expect(page.getByRole("alert")).toBeVisible();
+    await expect(page.getByLabel(FIELD)).toHaveAttribute("aria-invalid", "true");
   });
 });

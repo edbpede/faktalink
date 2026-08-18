@@ -5,8 +5,10 @@
  * drift between components. Pure string construction: no network, no DOM.
  */
 
+import type { VideoProvider } from "./extract";
+
 /**
- * The embed host.
+ * The YouTube embed host.
  *
  * `yout-ube.com` 301-redirects to the `www.` host, so we link the `www.` host
  * directly and users never pay for the redirect. Verified: it sets no
@@ -21,41 +23,75 @@ const WATCH_ORIGIN = "https://www.youtube.com";
 /** YouTube's thumbnail CDN. `hqdefault.jpg` exists for every video (480x360). */
 const THUMBNAIL_ORIGIN = "https://i.ytimg.com";
 
-/** faktalink.dk, for linking each emne page back to its source. */
+/** Vimeo's player and canonical hosts. */
+const VIMEO_EMBED_ORIGIN = "https://player.vimeo.com";
+const VIMEO_WATCH_ORIGIN = "https://vimeo.com";
+
+/** faktalink.dk, for linking each result back to its source. */
 export const FAKTALINK_ORIGIN = "https://faktalink.dk";
 
 /**
- * Builds the embed URL used when a poster is clicked.
+ * Builds the embed URL loaded into the player.
  *
- * `autoplay=1` is intentional: the iframe is only ever mounted by a deliberate
- * user click, so playback starting is the expected outcome of that click and
- * never an unprompted autoplay.
+ * `autoplay=1` is intentional: the player is only ever mounted by a deliberate
+ * click, so playback starting is the expected outcome of that click and never
+ * an unprompted autoplay.
  */
-export function buildEmbedUrl(videoId: string, startSeconds?: number | null): string {
+export function buildEmbedUrl(
+  videoId: string,
+  provider: VideoProvider = "youtube",
+  startSeconds?: number | null,
+): string {
+  const hasStart = typeof startSeconds === "number" && startSeconds > 0;
+
+  if (provider === "vimeo") {
+    const url = new URL(`/video/${videoId}`, VIMEO_EMBED_ORIGIN);
+    url.searchParams.set("autoplay", "1");
+    // Vimeo takes the offset as a media fragment, not a query parameter.
+    return hasStart ? `${url.href}#t=${startSeconds}s` : url.href;
+  }
+
   const url = new URL(`/embed/${videoId}`, EMBED_ORIGIN);
   url.searchParams.set("autoplay", "1");
   url.searchParams.set("rel", "0");
-  if (typeof startSeconds === "number" && startSeconds > 0) {
-    url.searchParams.set("start", String(startSeconds));
-  }
+  if (hasStart) url.searchParams.set("start", String(startSeconds));
   return url.href;
 }
 
 /**
- * Builds the plain YouTube link shown next to every video, so the video stays
- * reachable if `yout-ube.com` is down or blocked by the user's network.
+ * Builds the canonical link shown next to every video, so it stays reachable if
+ * the embed host is down or blocked by the reader's network.
  */
-export function buildWatchUrl(videoId: string, startSeconds?: number | null): string {
+export function buildWatchUrl(
+  videoId: string,
+  provider: VideoProvider = "youtube",
+  startSeconds?: number | null,
+): string {
+  const hasStart = typeof startSeconds === "number" && startSeconds > 0;
+
+  if (provider === "vimeo") {
+    const url = new URL(`/${videoId}`, VIMEO_WATCH_ORIGIN);
+    return hasStart ? `${url.href}#t=${startSeconds}s` : url.href;
+  }
+
   const url = new URL("/watch", WATCH_ORIGIN);
   url.searchParams.set("v", videoId);
-  if (typeof startSeconds === "number" && startSeconds > 0) {
-    url.searchParams.set("t", `${startSeconds}s`);
-  }
+  if (hasStart) url.searchParams.set("t", `${startSeconds}s`);
   return url.href;
 }
 
-/** Builds the poster URL shown in place of an unloaded iframe. */
-export function buildPosterUrl(videoId: string): string {
+/**
+ * Builds the poster URL for a video.
+ *
+ * Vimeo has no equivalent deterministic thumbnail URL — its CDN paths are
+ * per-video and only discoverable through an API call — so Vimeo videos return
+ * null and the UI draws its own placeholder rather than a broken image.
+ */
+export function buildPosterUrl(
+  videoId: string,
+  provider: VideoProvider = "youtube",
+): string | null {
+  if (provider === "vimeo") return null;
   return `${THUMBNAIL_ORIGIN}/vi/${videoId}/hqdefault.jpg`;
 }
 
