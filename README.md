@@ -163,7 +163,7 @@ what a local `bun run build` produces.
 ## Stack
 
 Bun 1.3 · Astro 7 (static, no adapter) · Svelte 5 (runes only) · UnoCSS (`presetWind4` +
-`presetShadcn` + `presetAnimations`) · Biome + Prettier · prek · Playwright.
+`presetShadcn` + `presetAnimations`) · Biome · prek · Playwright.
 
 Design tokens are the [caffeine](https://tweakcn.com/r/themes/caffeine.json) theme from
 tweakcn, ported into `src/styles/caffeine.css` by `scripts/tokens.ts` and committed. tweakcn

@@ -8,6 +8,8 @@
       "**/*.mjs",
       "**/*.json",
       "**/*.jsonc",
+      "**/*.astro",
+      "**/*.svelte",
       "!dist",
       "!.astro",
       "!.cache",
@@ -52,5 +54,17 @@
         "organizeImports": "on"
       }
     }
-  }
+  },
+  "overrides": [
+    {
+      "includes": ["**/*.astro", "**/*.svelte"],
+      "formatter": { "enabled": false },
+      "linter": {
+        "rules": {
+          "correctness": { "noUnusedVariables": "off", "noUnusedImports": "off" },
+          "style": { "useConst": "off" }
+        }
+      }
+    }
+  ]
 }

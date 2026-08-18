@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { $theme as themeStore, applyTheme, type Theme, toggleTheme } from "../stores/theme";
+  import { applyTheme, type Theme, $theme as themeStore, toggleTheme } from "../stores/theme";
 
   interface Props {
     /** Accessible label, supplied by the page in the active locale. */
