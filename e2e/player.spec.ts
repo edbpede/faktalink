@@ -167,6 +167,54 @@ test.describe("modal player", () => {
     await expect(first).toBeFocused();
   });
 
+  test("closes with the browser Back button and keeps the results", async ({ page }) => {
+    await lookup(page);
+    await page.getByRole("button", { name: PLAY }).first().click();
+    await expect(page.locator("dialog.player-dialog")).toBeVisible();
+
+    await page.goBack();
+
+    await expect(page.locator("dialog.player-dialog")).toBeHidden();
+    await expect(page.locator("dialog iframe")).toHaveCount(0);
+
+    // Back returns to the list the reader looked up. The results live in
+    // memory, so a real navigation would have thrown them away.
+    await expect(page.getByRole("button", { name: PLAY })).toHaveCount(13);
+    await expect(page.getByRole("heading", { name: /1970'erne/i })).toBeVisible();
+  });
+
+  test("closing any other way leaves no dead history entry behind", async ({ page }) => {
+    await lookup(page);
+    await page.getByRole("button", { name: PLAY }).first().click();
+    await expect(page.locator("dialog.player-dialog")).toBeVisible();
+
+    await page.getByRole("button", { name: /^luk$/i }).click();
+    await expect(page.locator("dialog.player-dialog")).toBeHidden();
+
+    // The player's own entry is off the stack, so the reader's next Back press
+    // leaves the site rather than doing nothing visible.
+    await expect
+      .poll(() => page.evaluate(() => history.state?.faktalinkPlayer === true))
+      .toBe(false);
+  });
+
+  test("a video opened straight after closing another stays open", async ({ page }) => {
+    await lookup(page);
+    const buttons = page.getByRole("button", { name: PLAY });
+
+    await buttons.first().click();
+    await expect(page.locator("dialog.player-dialog")).toBeVisible();
+    await page.getByRole("button", { name: /^luk$/i }).click();
+    await expect(page.locator("dialog.player-dialog")).toBeHidden();
+
+    await buttons.nth(1).click();
+    await expect(page.locator("dialog.player-dialog")).toBeVisible();
+
+    // The first player's history traversal must not shut the second one.
+    await page.waitForTimeout(750);
+    await expect(page.locator("dialog.player-dialog")).toBeVisible();
+  });
+
   test("plays one video at a time", async ({ page }) => {
     await lookup(page);
     const buttons = page.getByRole("button", { name: PLAY });

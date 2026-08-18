@@ -67,6 +67,77 @@
   });
 
   /**
+   * Whether this player owns the history entry currently on the stack.
+   *
+   * Plain `let`, not `$state`: nothing renders it. It only records whether
+   * Back is the right way to close, so the entry is never taken off the stack
+   * twice — once by the reader going back, and again by our own cleanup.
+   */
+  let ownsHistoryEntry = false;
+
+  /**
+   * Makes Back close the player instead of leaving the site.
+   *
+   * The player covers the whole viewport, so to the reader it is a place they
+   * navigated to, and Back is the gesture for leaving a place. Without an
+   * entry of its own it was not one: Back skipped straight past the open
+   * player and abandoned the results the reader had just looked up, which are
+   * held in memory and do not survive the trip.
+   *
+   * The entry deliberately carries the same URL. Nothing about the open player
+   * is addressable — the results behind it exist only in this document — so a
+   * URL implying otherwise would break on reload or when shared. The entry
+   * exists to be popped, not to be visited.
+   */
+  $effect(() => {
+    if (video === null) return;
+
+    history.pushState({ faktalinkPlayer: true }, "", location.href);
+    ownsHistoryEntry = true;
+
+    function onPopState() {
+      // The reader spent the entry by going back, so nothing else may pop it.
+      ownsHistoryEntry = false;
+      onclose();
+    }
+
+    window.addEventListener("popstate", onPopState);
+
+    return () => {
+      window.removeEventListener("popstate", onPopState);
+
+      // Reached only if something closed the player without asking us —
+      // `requestClose` hands every close to Back, which clears the flag first.
+      // Leaving the entry behind would cost the reader a Back press that
+      // visibly did nothing.
+      if (ownsHistoryEntry) {
+        ownsHistoryEntry = false;
+        history.back();
+      }
+    };
+  });
+
+  /**
+   * Closes the player, through Back whenever we put an entry on the stack.
+   *
+   * Every dismissal — the close button, Escape, the backdrop — is routed here
+   * so there is exactly one closing path. The alternative, closing directly
+   * and popping the entry afterwards, leaves a traversal in flight: a reader
+   * who closes one video and immediately opens another gets the second one
+   * shut under them by the first one's Back. Going through Back means the
+   * player is still open when the traversal lands, and `popstate` is what
+   * closes it.
+   */
+  function requestClose() {
+    if (ownsHistoryEntry) {
+      history.back();
+      return;
+    }
+
+    onclose();
+  }
+
+  /**
    * The native dialog gives us the focus trap, the inert background, the top
    * layer and Esc-to-close for free — all things a div-based overlay has to
    * reimplement badly. `showModal()` is the only way to get them, so the
@@ -115,7 +186,7 @@
   function onSurfaceClick(event: MouseEvent) {
     const target = event.target as HTMLElement | null;
     if (target === null) return;
-    if (target === dialog || target.classList.contains("player-panel")) onclose();
+    if (target === dialog || target.classList.contains("player-panel")) requestClose();
   }
 </script>
 
@@ -123,7 +194,7 @@
   bind:this={dialog}
   class="player-dialog"
   aria-label={video?.title ?? labels.untitled}
-  {onclose}
+  onclose={requestClose}
 >
   {#if video}
     <!--
@@ -144,12 +215,12 @@
         ></iframe>
 
         <!--
-          Sits behind the iframe, and only once the embed has had time to load.
-          If the embed host is blocked by a DNS filter — the exact situation
-          this site exists for — the iframe paints nothing and this shows
-          through with a way out. Rendering it unconditionally meant it also
-          showed through during a perfectly normal load, so the reader was told
-          the player was broken seconds before the video appeared.
+          Sits behind the iframe, and only once the embed is believed to have
+          failed. If the embed host is blocked by a DNS filter — the exact
+          situation this site exists for — the iframe paints nothing and this
+          shows through with a way out. Rendering it unconditionally meant it
+          also showed through during a perfectly normal load, so the reader was
+          told the player was broken seconds before the video appeared.
         -->
         {#if embedBlocked}
           <p class="player-blocked">
@@ -180,7 +251,7 @@
             bind:this={closeButton}
             type="button"
             class="focus-ring player-close"
-            onclick={onclose}
+            onclick={requestClose}
           >
             <span class="i-lucide-x" aria-hidden="true"></span>
             {labels.close}
