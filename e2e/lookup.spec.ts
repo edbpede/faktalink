@@ -67,6 +67,36 @@ test.describe("address field", () => {
     await expect(page.getByRole("button", { name: PLAY })).toHaveCount(13);
   });
 
+  test("starts typing from a click on the prefix, with the caret at the end", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    const field = page.getByLabel(FIELD);
+    await field.fill("1970");
+
+    // The prefix is inside the box, so a click on it means "type here".
+    await page.locator(".lookup-prefix").click();
+    await expect(field).toBeFocused();
+
+    await page.keyboard.type("-erne");
+    // Appended, not prepended: the caret follows what is already there.
+    await expect(field).toHaveValue("1970-erne");
+
+    await page.getByRole("button", { name: SUBMIT }).click();
+    await expect(page.getByRole("button", { name: PLAY })).toHaveCount(13);
+  });
+
+  test("starts typing from a click on the field's padding", async ({ page }) => {
+    await page.goto("/");
+
+    // The corner of the box, well clear of the input element itself.
+    await page.locator(".lookup-field").click({ position: { x: 4, y: 4 } });
+
+    await expect(page.getByLabel(FIELD)).toBeFocused();
+    await page.keyboard.type("1970-erne");
+    await expect(page.getByLabel(FIELD)).toHaveValue("1970-erne");
+  });
+
   test("submits on Enter", async ({ page }) => {
     await page.goto("/");
     await page.getByLabel(FIELD).fill("1970-erne");

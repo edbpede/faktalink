@@ -95,9 +95,29 @@
       .replace(/^\/+/, "");
   }
 
+  /**
+   * Whether a pasted string is an address rather than a fragment of one.
+   *
+   * A scheme, the host, or any slash means the reader copied an address from
+   * the browser bar and the whole field should become its slug. Anything else
+   * is ordinary text — a slug typed elsewhere, half a word being corrected —
+   * and replacing the entire field with it would be a surprise.
+   */
+  function looksLikeAddress(raw: string): boolean {
+    const trimmed = raw.trim();
+    return (
+      /^https?:\/\//i.test(trimmed) || /faktalink\.dk/i.test(trimmed) || trimmed.includes("/")
+    );
+  }
+
   function onPaste(event: ClipboardEvent) {
     const pasted = event.clipboardData?.getData("text");
     if (pasted === undefined || pasted === "") return;
+
+    // Not an address: let the browser paste it where the caret is. The input
+    // event that follows abandons any pending lookup on its own.
+    if (!looksLikeAddress(pasted)) return;
+
     event.preventDefault();
     // Pasting replaces the address outright, so whatever is in flight is
     // answering the wrong question. `preventDefault` means no input event
@@ -180,6 +200,26 @@
     input?.focus();
   }
 
+  /**
+   * Sends a click anywhere in the field to the input.
+   *
+   * The prefix and the padding around it are part of the same control to the
+   * reader: the field is one box, and a box you can only type into by hitting
+   * the right third of it reads as broken. Only the buttons keep their own
+   * clicks, because those are separate actions rather than the field itself.
+   */
+  function focusField(event: MouseEvent) {
+    const target = event.target as HTMLElement | null;
+    if (target === null) return;
+    if (target.closest("button") !== null) return;
+    if (target === input) return;
+
+    input?.focus();
+    // A click on the prefix means "start typing", so the caret goes after
+    // whatever is already there rather than to the front of it.
+    input?.setSelectionRange(input.value.length, input.value.length);
+  }
+
   function countLabel(n: number): string {
     return `${n} ${n === 1 ? labels.videoOne : labels.videoMany}`;
   }
@@ -200,7 +240,13 @@
     control rather than placeholder text, so it stays visible while typing and
     the caret sits exactly where the topic name goes.
   -->
-  <div class="lookup-field" class:is-invalid={error !== null && !hasResult}>
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div
+    class="lookup-field"
+    class:is-invalid={error !== null && !hasResult}
+    onclick={focusField}
+  >
     <span class="lookup-prefix" aria-hidden="true">{ADDRESS_PREFIX}</span>
 
     <input
@@ -386,6 +432,8 @@
     display: flex;
     align-items: center;
     gap: 0;
+    /* The whole box types, so the whole box shows a text caret. */
+    cursor: text;
     /* Two pixels, not one: at this size a hairline reads as a text box, and
        this field is the page's primary control rather than one field in a form. */
     border: 2px solid var(--foreground);
@@ -467,6 +515,7 @@
 
   .lookup-clear {
     display: inline-flex;
+    cursor: pointer;
     flex-shrink: 0;
     align-items: center;
     justify-content: center;
