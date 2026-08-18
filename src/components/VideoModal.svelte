@@ -24,6 +24,49 @@
   let closeButton = $state<HTMLButtonElement | null>(null);
 
   /**
+   * How long the embed is given before the player is called broken.
+   *
+   * A cold embed routinely takes several seconds: DNS, the redirect to the
+   * player, then the player's own bundle. The message used to render
+   * unconditionally behind the iframe, so it showed through that entire
+   * window: readers were told the player had failed, and the video then
+   * appeared on top of the apology a moment later.
+   *
+   * Eight seconds is far longer than a working embed ever needs, so reaching
+   * this timer is itself the evidence that something is wrong. Waiting costs
+   * the blocked reader nothing they cannot already act on: the "open on
+   * YouTube" link sits under the player from the moment it opens.
+   */
+  const EMBED_GRACE_MS = 8_000;
+
+  /** Whether the embed is now believed to have failed. */
+  let embedBlocked = $state(false);
+
+  /**
+   * Withholds the failure message until an embed could not plausibly still be
+   * loading.
+   *
+   * A stopwatch is a blunt signal, and it is deliberately the only one here.
+   * The iframe's own `load` event cannot stand in for success: browsers fire
+   * it for their own network-error page too, so a blocked host would suppress
+   * the very message it needs to show. Probing the host with a separate
+   * request tells us the host answered, never that the player rendered — a
+   * second signal that still could not decide the question, bought with an
+   * extra cross-origin request on every play.
+   */
+  $effect(() => {
+    if (video === null) return;
+
+    embedBlocked = false;
+
+    const timer = setTimeout(() => {
+      embedBlocked = true;
+    }, EMBED_GRACE_MS);
+
+    return () => clearTimeout(timer);
+  });
+
+  /**
    * The native dialog gives us the focus trap, the inert background, the top
    * layer and Esc-to-close for free — all things a div-based overlay has to
    * reimplement badly. `showModal()` is the only way to get them, so the
@@ -101,14 +144,19 @@
         ></iframe>
 
         <!--
-          Sits behind the iframe. If the embed host is blocked by a DNS filter —
-          the exact situation this site exists for — the iframe paints nothing
-          and this shows through with a way out.
+          Sits behind the iframe, and only once the embed has had time to load.
+          If the embed host is blocked by a DNS filter — the exact situation
+          this site exists for — the iframe paints nothing and this shows
+          through with a way out. Rendering it unconditionally meant it also
+          showed through during a perfectly normal load, so the reader was told
+          the player was broken seconds before the video appeared.
         -->
-        <p class="player-blocked">
-          <span class="player-blocked-title">{labels.blocked}</span>
-          <span>{labels.blockedHelp}</span>
-        </p>
+        {#if embedBlocked}
+          <p class="player-blocked">
+            <span class="player-blocked-title">{labels.blocked}</span>
+            <span>{labels.blockedHelp}</span>
+          </p>
+        {/if}
       </div>
 
       <div class="player-meta">

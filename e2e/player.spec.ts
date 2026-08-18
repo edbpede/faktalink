@@ -21,6 +21,50 @@ async function lookup(page: import("@playwright/test").Page, slug = "1970-erne")
   await expect(page.getByRole("button", { name: PLAY }).first()).toBeVisible();
 }
 
+test.describe("the blocked-embed message", () => {
+  test("stays hidden while the embed is still loading", async ({ page }) => {
+    await lookup(page);
+    await page.getByRole("button", { name: PLAY }).first().click();
+    await expect(page.locator("dialog iframe")).toHaveCount(1);
+
+    // The regression: the message used to render unconditionally behind the
+    // iframe, so it appeared in front of every player seconds before the video
+    // did. A player that is merely loading is never announced as broken.
+    await expect(page.locator(".player-blocked")).toHaveCount(0);
+    await page.waitForTimeout(3000);
+    await expect(page.locator(".player-blocked")).toHaveCount(0);
+  });
+
+  test("appears once no embed could still be loading", async ({ page }) => {
+    // A DNS filter that swallows the embed host: the situation this site
+    // exists for, and the one case where the message is the truth.
+    await page.route("https://www.yout-ube.com/**", (route) => route.abort());
+
+    await lookup(page);
+    await page.getByRole("button", { name: PLAY }).first().click();
+
+    // Longer than the player's grace period, which is deliberately generous.
+    await expect(page.locator(".player-blocked")).toBeVisible({ timeout: 15_000 });
+  });
+
+  test("is withheld again for the next video", async ({ page }) => {
+    await page.route("https://www.yout-ube.com/**", (route) => route.abort());
+
+    await lookup(page);
+    const buttons = page.getByRole("button", { name: PLAY });
+
+    await buttons.first().click();
+    await expect(page.locator(".player-blocked")).toBeVisible({ timeout: 15_000 });
+    await page.getByRole("button", { name: /^luk$/i }).click();
+    await expect(page.locator("dialog.player-dialog")).toBeHidden();
+
+    // The verdict belongs to one embed, not to the session: the next video
+    // gets the same grace the first one did.
+    await buttons.nth(1).click();
+    await expect(page.locator(".player-blocked")).toHaveCount(0);
+  });
+});
+
 test.describe("modal player", () => {
   test("opens a dialog with the right video on the embed host", async ({ page }) => {
     await lookup(page);
