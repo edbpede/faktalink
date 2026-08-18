@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { da } from "../src/i18n/da";
 
 /**
  * The modal player.
@@ -20,6 +21,70 @@ async function lookup(page: import("@playwright/test").Page, slug = "1970-erne")
   await page.getByRole("button", { name: SUBMIT }).click();
   await expect(page.getByRole("button", { name: PLAY }).first()).toBeVisible();
 }
+
+test.describe("the blocked-embed message", () => {
+  test("stays hidden while the embed is still loading", async ({ page }) => {
+    await lookup(page);
+    await page.getByRole("button", { name: PLAY }).first().click();
+    await expect(page.locator("dialog iframe")).toHaveCount(1);
+
+    // The regression: the message used to render unconditionally behind the
+    // iframe, so it appeared in front of every player seconds before the video
+    // did. A player that is merely loading is never announced as broken.
+    await expect(page.locator(".player-blocked")).toHaveCount(0);
+    await page.waitForTimeout(3000);
+    await expect(page.locator(".player-blocked")).toHaveCount(0);
+  });
+
+  test("appears visually after the grace period for a blocked embed", async ({ page }) => {
+    // A DNS filter that swallows the embed host: the situation this site
+    // exists for, and the case where the visual fallback is useful.
+    await page.route("https://www.yout-ube.com/**", (route) => route.abort());
+
+    await lookup(page);
+    await page.getByRole("button", { name: PLAY }).first().click();
+
+    // Longer than the player's grace period, which is deliberately generous.
+    await expect(page.locator(".player-blocked")).toBeVisible({ timeout: 15_000 });
+  });
+
+  test("is never announced as fact, because it is only ever a guess", async ({ page }) => {
+    await lookup(page);
+    await page.getByRole("button", { name: PLAY }).first().click();
+    await expect(page.locator("dialog iframe")).toHaveCount(1);
+
+    // Past the grace period the timer has fired, so the layer is in the DOM
+    // regardless of whether this embed actually failed — the player cannot
+    // tell the two apart.
+    await expect(page.locator(".player-blocked")).toHaveCount(1, { timeout: 15_000 });
+
+    // The regression: a working player kept for a few seconds put "the player
+    // could not load" into the accessibility tree, so a screen-reader user was
+    // told the video had failed while it was playing. Sight hides the guess
+    // behind the iframe; the accessibility tree has no such layering, so the
+    // layer must be excluded from it outright.
+    await expect(page.getByRole("paragraph").filter({ hasText: da.playerBlocked })).toHaveCount(
+      0,
+    );
+  });
+
+  test("is withheld again for the next video", async ({ page }) => {
+    await page.route("https://www.yout-ube.com/**", (route) => route.abort());
+
+    await lookup(page);
+    const buttons = page.getByRole("button", { name: PLAY });
+
+    await buttons.first().click();
+    await expect(page.locator(".player-blocked")).toBeVisible({ timeout: 15_000 });
+    await page.getByRole("button", { name: /^luk$/i }).click();
+    await expect(page.locator("dialog.player-dialog")).toBeHidden();
+
+    // The verdict belongs to one embed, not to the session: the next video
+    // gets the same grace the first one did.
+    await buttons.nth(1).click();
+    await expect(page.locator(".player-blocked")).toHaveCount(0);
+  });
+});
 
 test.describe("modal player", () => {
   test("opens a dialog with the right video on the embed host", async ({ page }) => {
@@ -121,6 +186,54 @@ test.describe("modal player", () => {
     // The native dialog restores focus to the element that opened it, so the
     // reader is not dumped at the top of the document.
     await expect(first).toBeFocused();
+  });
+
+  test("closes with the browser Back button and keeps the results", async ({ page }) => {
+    await lookup(page);
+    await page.getByRole("button", { name: PLAY }).first().click();
+    await expect(page.locator("dialog.player-dialog")).toBeVisible();
+
+    await page.goBack();
+
+    await expect(page.locator("dialog.player-dialog")).toBeHidden();
+    await expect(page.locator("dialog iframe")).toHaveCount(0);
+
+    // Back returns to the list the reader looked up. The results live in
+    // memory, so a real navigation would have thrown them away.
+    await expect(page.getByRole("button", { name: PLAY })).toHaveCount(13);
+    await expect(page.getByRole("heading", { name: /1970'erne/i })).toBeVisible();
+  });
+
+  test("closing any other way leaves no dead history entry behind", async ({ page }) => {
+    await lookup(page);
+    await page.getByRole("button", { name: PLAY }).first().click();
+    await expect(page.locator("dialog.player-dialog")).toBeVisible();
+
+    await page.getByRole("button", { name: /^luk$/i }).click();
+    await expect(page.locator("dialog.player-dialog")).toBeHidden();
+
+    // The player's own entry is off the stack, so the reader's next Back press
+    // leaves the site rather than doing nothing visible.
+    await expect
+      .poll(() => page.evaluate(() => history.state?.faktalinkPlayer === true))
+      .toBe(false);
+  });
+
+  test("a video opened straight after closing another stays open", async ({ page }) => {
+    await lookup(page);
+    const buttons = page.getByRole("button", { name: PLAY });
+
+    await buttons.first().click();
+    await expect(page.locator("dialog.player-dialog")).toBeVisible();
+    await page.getByRole("button", { name: /^luk$/i }).click();
+    await expect(page.locator("dialog.player-dialog")).toBeHidden();
+
+    await buttons.nth(1).click();
+    await expect(page.locator("dialog.player-dialog")).toBeVisible();
+
+    // The first player's history traversal must not shut the second one.
+    await page.waitForTimeout(750);
+    await expect(page.locator("dialog.player-dialog")).toBeVisible();
   });
 
   test("plays one video at a time", async ({ page }) => {

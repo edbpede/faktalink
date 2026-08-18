@@ -24,6 +24,121 @@
   let closeButton = $state<HTMLButtonElement | null>(null);
 
   /**
+   * How long the embed is given before the visual fallback is revealed.
+   *
+   * A cold embed routinely takes several seconds: DNS, the redirect to the
+   * player, then the player's own bundle. The message used to render
+   * unconditionally behind the iframe, so it showed through that entire
+   * window: readers were told the player had failed, and the video then
+   * appeared on top of the apology a moment later.
+   *
+   * Eight seconds gives a cold embed time to paint before the layer behind it
+   * is revealed. The timer cannot prove failure, so the layer remains hidden
+   * from assistive technology. Waiting costs a blocked reader nothing they
+   * cannot already act on: the "open on YouTube" link sits under the player
+   * from the moment it opens.
+   */
+  const EMBED_GRACE_MS = 8_000;
+
+  /** Whether the grace period has elapsed and the visual fallback is shown. */
+  let embedBlocked = $state(false);
+
+  /**
+   * Withholds the failure message until an embed could not plausibly still be
+   * loading.
+   *
+   * A stopwatch is a blunt signal, and it is deliberately the only one here.
+   * The iframe's own `load` event cannot stand in for success: browsers fire
+   * it for their own network-error page too, so a blocked host would suppress
+   * the very message it needs to show. Probing the host with a separate
+   * request tells us the host answered, never that the player rendered — a
+   * second signal that still could not decide the question, bought with an
+   * extra cross-origin request on every play.
+   */
+  $effect(() => {
+    if (video === null) return;
+
+    embedBlocked = false;
+
+    const timer = setTimeout(() => {
+      embedBlocked = true;
+    }, EMBED_GRACE_MS);
+
+    return () => clearTimeout(timer);
+  });
+
+  /**
+   * Whether this player owns the history entry currently on the stack.
+   *
+   * Plain `let`, not `$state`: nothing renders it. It only records whether
+   * Back is the right way to close, so the entry is never taken off the stack
+   * twice — once by the reader going back, and again by our own cleanup.
+   */
+  let ownsHistoryEntry = false;
+
+  /**
+   * Makes Back close the player instead of leaving the site.
+   *
+   * The player covers the whole viewport, so to the reader it is a place they
+   * navigated to, and Back is the gesture for leaving a place. Without an
+   * entry of its own it was not one: Back skipped straight past the open
+   * player and abandoned the results the reader had just looked up, which are
+   * held in memory and do not survive the trip.
+   *
+   * The entry deliberately carries the same URL. Nothing about the open player
+   * is addressable — the results behind it exist only in this document — so a
+   * URL implying otherwise would break on reload or when shared. The entry
+   * exists to be popped, not to be visited.
+   */
+  $effect(() => {
+    if (video === null) return;
+
+    history.pushState({ faktalinkPlayer: true }, "", location.href);
+    ownsHistoryEntry = true;
+
+    function onPopState() {
+      // The reader spent the entry by going back, so nothing else may pop it.
+      ownsHistoryEntry = false;
+      onclose();
+    }
+
+    window.addEventListener("popstate", onPopState);
+
+    return () => {
+      window.removeEventListener("popstate", onPopState);
+
+      // Reached only if something closed the player without asking us —
+      // `requestClose` hands every close to Back, which clears the flag first.
+      // Leaving the entry behind would cost the reader a Back press that
+      // visibly did nothing.
+      if (ownsHistoryEntry) {
+        ownsHistoryEntry = false;
+        history.back();
+      }
+    };
+  });
+
+  /**
+   * Closes the player, through Back whenever we put an entry on the stack.
+   *
+   * Every dismissal — the close button, Escape, the backdrop — is routed here
+   * so there is exactly one closing path. The alternative, closing directly
+   * and popping the entry afterwards, leaves a traversal in flight: a reader
+   * who closes one video and immediately opens another gets the second one
+   * shut under them by the first one's Back. Going through Back means the
+   * player is still open when the traversal lands, and `popstate` is what
+   * closes it.
+   */
+  function requestClose() {
+    if (ownsHistoryEntry) {
+      history.back();
+      return;
+    }
+
+    onclose();
+  }
+
+  /**
    * The native dialog gives us the focus trap, the inert background, the top
    * layer and Esc-to-close for free — all things a div-based overlay has to
    * reimplement badly. `showModal()` is the only way to get them, so the
@@ -72,7 +187,7 @@
   function onSurfaceClick(event: MouseEvent) {
     const target = event.target as HTMLElement | null;
     if (target === null) return;
-    if (target === dialog || target.classList.contains("player-panel")) onclose();
+    if (target === dialog || target.classList.contains("player-panel")) requestClose();
   }
 </script>
 
@@ -80,7 +195,7 @@
   bind:this={dialog}
   class="player-dialog"
   aria-label={video?.title ?? labels.untitled}
-  {onclose}
+  onclose={requestClose}
 >
   {#if video}
     <!--
@@ -101,14 +216,28 @@
         ></iframe>
 
         <!--
-          Sits behind the iframe. If the embed host is blocked by a DNS filter —
-          the exact situation this site exists for — the iframe paints nothing
-          and this shows through with a way out.
+          Sits behind the iframe once the embed grace period has elapsed. If
+          the embed host is blocked by a DNS filter — the exact
+          situation this site exists for — the iframe paints nothing and this
+          shows through with a way out. Rendering it unconditionally meant it
+          also showed through during a perfectly normal load, so the reader was
+          told the player was broken seconds before the video appeared.
+
+          `aria-hidden`, because the timer above is a guess and never becomes a
+          fact. Sight resolves the guess on its own: a working embed paints over
+          this layer, so no one ever reads it. The accessibility tree has no
+          such layering, so the same guess would be handed to a screen reader as
+          a plain statement that the player had failed — while the video was
+          playing. Nothing is withheld by hiding it: the "open on YouTube" link
+          below carries the entire way out, unconditionally and from the moment
+          the player opens.
         -->
-        <p class="player-blocked">
-          <span class="player-blocked-title">{labels.blocked}</span>
-          <span>{labels.blockedHelp}</span>
-        </p>
+        {#if embedBlocked}
+          <p class="player-blocked" aria-hidden="true">
+            <span class="player-blocked-title">{labels.blocked}</span>
+            <span>{labels.blockedHelp}</span>
+          </p>
+        {/if}
       </div>
 
       <div class="player-meta">
@@ -132,7 +261,7 @@
             bind:this={closeButton}
             type="button"
             class="focus-ring player-close"
-            onclick={onclose}
+            onclick={requestClose}
           >
             <span class="i-lucide-x" aria-hidden="true"></span>
             {labels.close}
