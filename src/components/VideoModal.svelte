@@ -24,7 +24,7 @@
   let closeButton = $state<HTMLButtonElement | null>(null);
 
   /**
-   * How long the embed is given before the player is called broken.
+   * How long the embed is given before the visual fallback is revealed.
    *
    * A cold embed routinely takes several seconds: DNS, the redirect to the
    * player, then the player's own bundle. The message used to render
@@ -32,14 +32,15 @@
    * window: readers were told the player had failed, and the video then
    * appeared on top of the apology a moment later.
    *
-   * Eight seconds is far longer than a working embed ever needs, so reaching
-   * this timer is itself the evidence that something is wrong. Waiting costs
-   * the blocked reader nothing they cannot already act on: the "open on
-   * YouTube" link sits under the player from the moment it opens.
+   * Eight seconds gives a cold embed time to paint before the layer behind it
+   * is revealed. The timer cannot prove failure, so the layer remains hidden
+   * from assistive technology. Waiting costs a blocked reader nothing they
+   * cannot already act on: the "open on YouTube" link sits under the player
+   * from the moment it opens.
    */
   const EMBED_GRACE_MS = 8_000;
 
-  /** Whether the embed is now believed to have failed. */
+  /** Whether the grace period has elapsed and the visual fallback is shown. */
   let embedBlocked = $state(false);
 
   /**
@@ -215,15 +216,24 @@
         ></iframe>
 
         <!--
-          Sits behind the iframe, and only once the embed is believed to have
-          failed. If the embed host is blocked by a DNS filter — the exact
+          Sits behind the iframe once the embed grace period has elapsed. If
+          the embed host is blocked by a DNS filter — the exact
           situation this site exists for — the iframe paints nothing and this
           shows through with a way out. Rendering it unconditionally meant it
           also showed through during a perfectly normal load, so the reader was
           told the player was broken seconds before the video appeared.
+
+          `aria-hidden`, because the timer above is a guess and never becomes a
+          fact. Sight resolves the guess on its own: a working embed paints over
+          this layer, so no one ever reads it. The accessibility tree has no
+          such layering, so the same guess would be handed to a screen reader as
+          a plain statement that the player had failed — while the video was
+          playing. Nothing is withheld by hiding it: the "open on YouTube" link
+          below carries the entire way out, unconditionally and from the moment
+          the player opens.
         -->
         {#if embedBlocked}
-          <p class="player-blocked">
+          <p class="player-blocked" aria-hidden="true">
             <span class="player-blocked-title">{labels.blocked}</span>
             <span>{labels.blockedHelp}</span>
           </p>

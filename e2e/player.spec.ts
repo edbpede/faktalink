@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { da } from "../src/i18n/da";
 
 /**
  * The modal player.
@@ -35,9 +36,9 @@ test.describe("the blocked-embed message", () => {
     await expect(page.locator(".player-blocked")).toHaveCount(0);
   });
 
-  test("appears once no embed could still be loading", async ({ page }) => {
+  test("appears visually after the grace period for a blocked embed", async ({ page }) => {
     // A DNS filter that swallows the embed host: the situation this site
-    // exists for, and the one case where the message is the truth.
+    // exists for, and the case where the visual fallback is useful.
     await page.route("https://www.yout-ube.com/**", (route) => route.abort());
 
     await lookup(page);
@@ -45,6 +46,26 @@ test.describe("the blocked-embed message", () => {
 
     // Longer than the player's grace period, which is deliberately generous.
     await expect(page.locator(".player-blocked")).toBeVisible({ timeout: 15_000 });
+  });
+
+  test("is never announced as fact, because it is only ever a guess", async ({ page }) => {
+    await lookup(page);
+    await page.getByRole("button", { name: PLAY }).first().click();
+    await expect(page.locator("dialog iframe")).toHaveCount(1);
+
+    // Past the grace period the timer has fired, so the layer is in the DOM
+    // regardless of whether this embed actually failed — the player cannot
+    // tell the two apart.
+    await expect(page.locator(".player-blocked")).toHaveCount(1, { timeout: 15_000 });
+
+    // The regression: a working player kept for a few seconds put "the player
+    // could not load" into the accessibility tree, so a screen-reader user was
+    // told the video had failed while it was playing. Sight hides the guess
+    // behind the iframe; the accessibility tree has no such layering, so the
+    // layer must be excluded from it outright.
+    await expect(page.getByRole("paragraph").filter({ hasText: da.playerBlocked })).toHaveCount(
+      0,
+    );
   });
 
   test("is withheld again for the next video", async ({ page }) => {
