@@ -38,9 +38,10 @@ jobs:
     # manual redeploy (for example once DNS has propagated) must never be
     # filtered out by the [skip ci] guard.
     if: ${{ !contains(github.event.head_commit.message || '', '[skip ci]') }}
-    environment:
-      name: github-pages
-      url: https://faktalink.edbpede.net
+    # No `environment: github-pages` here. That environment is managed by GitHub
+    # for the Pages source branch (`gh-pages`) and its branch policy rejects any
+    # deployment from `main`. This workflow publishes by force-pushing the branch
+    # with GITHUB_TOKEN, so it needs no deployment environment at all.
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
