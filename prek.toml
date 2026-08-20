@@ -3,7 +3,7 @@
 #:schema https://www.schemastore.org/prek.json
 #
 # Tuned for this project's stack: Bun + Astro 7 + Svelte 5 (runes) + UnoCSS + TypeScript.
-# Binding conventions live in `.augment/rules/bun-astro-dev-pro.md`; several hooks below
+# Binding conventions live in `.agents/rules/bun-astro-dev-pro.md`; several hooks below
 # exist purely to make the anti-patterns listed there unpushable.
 #
 #   prek install                 # wires the pre-commit, commit-msg and pre-push shims
@@ -48,21 +48,21 @@ repo = "builtin"
 
 # The three whitespace fixers below rewrite files, so they share one exclude set:
 # externally-authored normative text (LICENSE, the binding rules doc). Verified:
-# without the `.augment` entry, end-of-file-fixer rewrites the rules document.
+# without the `.agents` entry, end-of-file-fixer rewrites the rules document.
 [[repos.hooks]]
 id = "trailing-whitespace"
 # Markdown hard line breaks are two trailing spaces; keep them in docs.
 args = ["--markdown-linebreak-ext=md"]
-exclude = { glob = ["LICENSE", ".augment/**"] }
+exclude = { glob = ["LICENSE", ".agents/**"] }
 
 [[repos.hooks]]
 id = "end-of-file-fixer"
-exclude = { glob = ["LICENSE", ".augment/**"] }
+exclude = { glob = ["LICENSE", ".agents/**"] }
 
 [[repos.hooks]]
 id = "mixed-line-ending"
 args = ["--fix=lf"]
-exclude = { glob = ["LICENSE", ".augment/**"] }
+exclude = { glob = ["LICENSE", ".agents/**"] }
 
 # A UTF-8 BOM at the head of a source file corrupts æ/ø/å handling in exactly the
 # places this project cares about: the Danish message catalogue, emne titles and
