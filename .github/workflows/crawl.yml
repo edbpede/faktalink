@@ -1,4 +1,4 @@
-# Refresh the video snapshot from faktalink.dk and commit any changes.
+# Refresh the video snapshot from faktalink.dk through a checked pull request.
 #
 # faktalink.dk sends no `Access-Control-Allow-Origin` header, so a browser on
 # our domain cannot fetch it directly. The alternative — routing every lookup
@@ -23,9 +23,11 @@ on:
     - cron: "10 4,16 * * *"
   workflow_dispatch:
 
-# The job commits the refreshed snapshot back to the branch.
+# The job publishes only the snapshot to a dedicated PR branch and dispatches CI.
 permissions:
   contents: write
+  pull-requests: write
+  actions: write
 
 # Never run two crawls at once: both would push to the same branch and the
 # loser would fail on a non-fast-forward. Queued rather than cancelled, so a
@@ -36,17 +38,21 @@ concurrency:
 
 jobs:
   crawl:
-    name: Crawl · extract · commit
-    runs-on: ubuntu-latest
+    name: Crawl, validate and propose snapshot
+    runs-on: ubuntu-24.04
+    if: github.ref_name == github.event.repository.default_branch
     # 505 pages at concurrency 6 with a 120 ms courtesy delay takes ~4 minutes;
     # the ceiling is for a slow origin, not the expected case.
     timeout-minutes: 30
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@v2.2.0
         with:
           # Derived from the committed `packageManager` field, not `latest`.
           bun-version-file: package.json
@@ -110,41 +116,40 @@ jobs:
             exit 1
           fi
 
-      - name: Commit the refreshed snapshot
-        id: commit
+      - name: Propose the validated snapshot
+        id: snapshot
+        uses: peter-evans/create-pull-request@v8.1.1
+        with:
+          token: ${{ github.token }}
+          base: ${{ github.event.repository.default_branch }}
+          branch: fix/refresh-video-snapshot
+          add-paths: src/data/emner.json
+          commit-message: 'chore(data): refresh video snapshot'
+          signoff: true
+          title: 'chore(data): refresh video snapshot'
+          body: |
+            Refresh the committed video snapshot from the scheduled crawl.
+
+            The crawler's failure threshold, snapshot schema validation and
+            80% page-count floor passed. Full development CI is dispatched on
+            this exact commit, including types, unit tests, build, bundle budget,
+            HTTP snapshot assertions and browser checks. Merge only after the
+            required check succeeds; deployment follows the default-branch merge.
+
+      - name: Validate the exact snapshot PR commit
+        if: steps.snapshot.outputs.pull-request-number != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SNAPSHOT_PR: ${{ steps.snapshot.outputs.pull-request-number }}
+          SNAPSHOT_SHA: ${{ steps.snapshot.outputs.pull-request-head-sha }}
         run: |
           set -euo pipefail
-          if git diff --quiet -- src/data/emner.json; then
-            echo "No change in the snapshot; nothing to commit."
-            echo "changed=false" >> "${GITHUB_OUTPUT}"
-            exit 0
-          fi
-
-          pages=$(bun -e 'console.log((await Bun.file("src/data/emner.json").json()).length)')
-          videos=$(bun -e '
-            const e = await Bun.file("src/data/emner.json").json();
-            console.log(e.reduce((n, x) => n + x.videos.length, 0));
-          ')
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/data/emner.json
-          # [skip ci] marks this as a data-only change: the quality, test and
-          # smoke tiers have nothing to say about it. It is belt-and-braces —
-          # a GITHUB_TOKEN push raises no workflow events at all (see below).
-          git commit -m "chore(data): refresh video snapshot [skip ci]" \
-            -m "${pages} pages with video, ${videos} videos, crawled $(date -u +%Y-%m-%dT%H:%MZ)."
-          git push
-          echo "changed=true" >> "${GITHUB_OUTPUT}"
-
-      # A push authenticated with GITHUB_TOKEN deliberately raises no workflow
-      # events, so deploy.yml would never see this commit and the refreshed
-      # snapshot would sit on main without ever reaching the site. The deploy is
-      # therefore dispatched explicitly. deploy.yml's `[skip ci]` guard reads
-      # `github.event.head_commit.message || ''`, which is null-safe precisely
-      # for a workflow_dispatch, so this runs even though the commit is marked.
-      - name: Publish the refreshed snapshot
-        if: steps.commit.outputs.changed == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh workflow run deploy.yml --ref main
+          for attempt in 1 2 3; do
+            if gh workflow run ci.yml --ref fix/refresh-video-snapshot \
+              -f pr-number="$SNAPSHOT_PR" -f expected-head-sha="$SNAPSHOT_SHA"; then
+              exit 0
+            fi
+            sleep "$((attempt * 2))"
+          done
+          echo "::error::CI dispatch failed. Run ci.yml on fix/refresh-video-snapshot with pr-number=$SNAPSHOT_PR and expected-head-sha=$SNAPSHOT_SHA."
+          exit 1

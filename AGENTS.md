@@ -10,7 +10,7 @@ playable videos. Bun is the only runtime, installer and script runner.
 
 ```bash
 bun install
-bun run check                       # astro check — the ONLY typechecker for .astro/.svelte
+bun run check                       # astro check plus svelte-check for islands
 bun run build                       # required before check:bundle and test:e2e
 bun test                            # unit suite; bunfig.toml scopes it to src/
 bun test src/lib/extract.test.ts    # one file
@@ -34,7 +34,7 @@ Run `bun run build` first or the suite tests a stale build. Don't switch it back
 `prek install` wires pre-commit, commit-msg and pre-push. To reproduce what CI runs:
 
 ```bash
-SKIP=no-commit-to-branch,build prek run --all-files --hook-stage manual
+SKIP=no-commit-to-branch,biome,build prek run --all-files --hook-stage manual
 ```
 
 `--hook-stage manual` is the selector that reaches the stack guards. `--group ci` silently
